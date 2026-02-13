@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as net from 'net';
 import * as path from 'path';
 import { spawn, type ChildProcess } from 'child_process';
+import { pathToFileURL } from 'url';
 
 import { logger } from '../utils/helpers.js';
 
@@ -65,12 +66,34 @@ async function cleanupSocket(socketPath: string): Promise<void> {
   await removeIfEmpty(hashDir);
 }
 
-async function startDaemon(): Promise<void> {
+export type DaemonStartOptions = {
+  socketPath: string;
+  cwd?: string;
+  branch?: string;
+};
+
+export function resolveDaemonOptionsFromProcess(): DaemonStartOptions {
   const args = process.argv.slice(2);
   const socketPath =
     getArgValue(args, '--socket') || process.env['MCP_SHELL_DAEMON_SOCKET'];
   const cwd = getArgValue(args, '--cwd') || process.env['MCP_SHELL_DAEMON_CWD'];
   const branch = getArgValue(args, '--branch') || process.env['MCP_SHELL_DAEMON_BRANCH'];
+
+  if (!socketPath) {
+    throw new Error('Daemon socket path is required.');
+  }
+
+  return {
+    socketPath,
+    ...(cwd ? { cwd } : {}),
+    ...(branch ? { branch } : {}),
+  };
+}
+
+export async function startDaemon(options: DaemonStartOptions): Promise<void> {
+  const socketPath = options.socketPath;
+  const cwd = options.cwd;
+  const branch = options.branch;
 
   if (!socketPath) {
     throw new Error('Daemon socket path is required.');
@@ -410,7 +433,13 @@ async function startDaemon(): Promise<void> {
   });
 }
 
-startDaemon().catch((error) => {
-  logger.error('Daemon startup failed', { error: String(error) }, DAEMON_COMPONENT);
-  process.exitCode = 1;
-});
+const isMain = process.argv[1]
+  ? pathToFileURL(process.argv[1]).href === import.meta.url
+  : false;
+
+if (isMain) {
+  startDaemon(resolveDaemonOptionsFromProcess()).catch((error) => {
+    logger.error('Daemon startup failed', { error: String(error) }, DAEMON_COMPONENT);
+    process.exitCode = 1;
+  });
+}

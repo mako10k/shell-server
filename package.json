@@ -1,16 +1,35 @@
 {
   "name": "@mako10k/shell-server",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Shell execution daemon and runtime utilities for MCP tools.",
   "type": "module",
-  "main": "dist/runtime/index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "shell-server": "dist/index.js"
+  },
   "exports": {
+    ".": "./dist/index.js",
     "./runtime": "./dist/runtime/index.js",
     "./tool-runtime": "./dist/runtime/tool-runtime.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mako10k/shell-server"
+  },
+  "bugs": {
+    "url": "https://github.com/mako10k/shell-server/issues"
+  },
+  "homepage": "https://github.com/mako10k/shell-server#readme",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.2",
     "node-pty": "^1.0.0",
