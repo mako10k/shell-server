@@ -1,10 +1,12 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { existsSync } from 'fs';
 import { Dirent } from 'fs';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 
 import { MCPShellError } from '../utils/errors.js';
 
@@ -115,7 +117,9 @@ export class StubServerManager implements ServerManager {
   }
 
   private isDaemonEnabled(): boolean {
-    return process.env['MCP_SHELL_DAEMON_ENABLED'] === 'true';
+    // Default ON to enable auto-start/reattach behavior.
+    // Opt-out explicitly with MCP_SHELL_DAEMON_ENABLED=false.
+    return process.env['MCP_SHELL_DAEMON_ENABLED'] !== 'false';
   }
 
   private hashCwd(cwd: string): string {
@@ -150,7 +154,24 @@ export class StubServerManager implements ServerManager {
       return override;
     }
 
-    return path.resolve(process.cwd(), 'dist/packages/shell-server/src/daemon/server.js');
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    const packagedCandidate = path.resolve(moduleDir, '../daemon/server.js');
+    const candidates = [
+      // When running from a packaged build (e.g., node_modules), daemon lives next to dist/*.
+      packagedCandidate,
+      // When running from this mono-repo build output.
+      path.resolve(process.cwd(), 'dist/packages/shell-server/src/daemon/server.js'),
+      path.resolve(process.cwd(), 'dist/packages/shell-server/daemon/server.js'),
+    ];
+
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    // Best guess (will be validated by fs.access at call site).
+    return packagedCandidate;
   }
 
   private async socketExists(socketPath: string): Promise<boolean> {

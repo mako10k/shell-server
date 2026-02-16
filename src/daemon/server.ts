@@ -2,7 +2,8 @@ import * as fs from 'fs/promises';
 import * as net from 'net';
 import * as path from 'path';
 import { spawn, type ChildProcess } from 'child_process';
-import { pathToFileURL } from 'url';
+import { existsSync } from 'fs';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 import { logger } from '../utils/helpers.js';
 
@@ -126,10 +127,36 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
   const mcpSocketPath = path.join(path.dirname(socketPath), MCP_SOCKET_FILE_NAME);
 
   const resolveMcpDaemonEntry = (): string => {
-    return (
-      process.env['MCP_SHELL_MCP_DAEMON_ENTRY']
-      || path.resolve(process.cwd(), 'dist/packages/mcp-shell/src/daemon.js')
+    const override = process.env['MCP_SHELL_MCP_DAEMON_ENTRY'];
+    if (override) {
+      return override;
+    }
+
+    // Prefer resolving relative to this module's location so that packaged
+    // environments (VS Code extension / node_modules) work without relying on cwd.
+    const packagedCandidate = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      'packages',
+      'mcp-shell',
+      'src',
+      'daemon.js'
     );
+    const candidates = [
+      // Mono-repo build output co-located under dist/packages.
+      packagedCandidate,
+      // Legacy cwd-based mono-repo path.
+      path.resolve(process.cwd(), 'dist/packages/mcp-shell/src/daemon.js'),
+    ];
+
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    // Best guess (validated by fs.access in startMcpDaemon).
+    return packagedCandidate;
   };
 
   const startMcpDaemon = async () => {
