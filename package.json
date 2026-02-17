@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.17.2",
+    "node-jq": "^6.3.1",
     "node-pty": "^1.0.0",
     "uuid": "^10.0.0",
     "zod": "^3.23.8",

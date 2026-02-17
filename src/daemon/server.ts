@@ -5,6 +5,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 
+import { createShellToolRuntime, dispatchToolCall, TOOL_NAMES, type ToolName } from '../runtime/tool-runtime.js';
 import { logger } from '../utils/helpers.js';
 
 const DAEMON_COMPONENT = 'daemon';
@@ -13,12 +14,15 @@ const HEARTBEAT_TIMEOUT_MS = 500;
 const MCP_SOCKET_FILE_NAME = 'mcp.sock';
 
 type DaemonRequest = {
-  action?: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop';
+  action?: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop' | 'tool';
+  tool_name?: string;
+  params?: Record<string, unknown>;
 };
 
 type DaemonResponse = {
   ok: boolean;
   error?: string;
+  result?: unknown;
   attached?: boolean;
   detached?: boolean;
   attachedAt?: string;
@@ -95,6 +99,12 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
   const socketPath = options.socketPath;
   const cwd = options.cwd;
   const branch = options.branch;
+  const toolRuntime = createShellToolRuntime({
+    ...(cwd ? { defaultWorkingDirectory: cwd } : {}),
+    enhancedConfigOverrides: {
+      enhanced_mode_enabled: false,
+    },
+  });
 
   if (!socketPath) {
     throw new Error('Daemon socket path is required.');
@@ -419,6 +429,41 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
         process.exit(0);
       }
 
+      if (action === 'tool') {
+        const toolNameRaw = request.tool_name;
+        const params = request.params ?? {};
+
+        if (!toolNameRaw) {
+          sendResponse(socket, { ok: false, error: 'missing_tool_name' });
+          return;
+        }
+
+        if (!(TOOL_NAMES as readonly string[]).includes(toolNameRaw)) {
+          sendResponse(socket, {
+            ok: false,
+            error: `unsupported_tool:${toolNameRaw}`,
+          });
+          return;
+        }
+
+        try {
+          const result = await dispatchToolCall(
+            toolRuntime.shellTools,
+            toolRuntime.serverManager,
+            toolNameRaw as ToolName,
+            params,
+            {
+              ...(cwd ? { defaultWorkingDirectory: cwd } : {}),
+              fallbackWorkingDirectory: process.cwd(),
+            }
+          );
+          sendResponse(socket, { ok: true, result });
+        } catch (error) {
+          sendResponse(socket, { ok: false, error: String(error) });
+        }
+        return;
+      }
+
       sendResponse(socket, { ok: false, error: 'unsupported_action' });
     };
 
@@ -445,6 +490,7 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
     });
+    await toolRuntime.cleanup();
     await cleanupSocket(socketPath);
   };
 
