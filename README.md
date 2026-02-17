@@ -102,6 +102,34 @@ npm install
 npm run build
 ```
 
+## Release
+
+1. Update `CHANGELOG.md` (`[Unreleased]`) using Added / Changed / Fixed / Security / Dependencies / Notes.
+
+Create next version section from `[Unreleased]`:
+
+```bash
+npm run changelog:release -- 0.1.1
+```
+
+Version bump (updates `package.json`, creates Git commit/tag):
+
+```bash
+npm run version:patch
+npm run version:minor
+npm run version:major
+```
+
+2. Push commit/tag to GitHub.
+
+Publish:
+
+```bash
+npm publish
+```
+
+3. Create GitHub Release from the tag and copy the version section from `CHANGELOG.md`.
+
 ## Exports
 
 - `@mako10k/shell-server/runtime`

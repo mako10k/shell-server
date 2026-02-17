@@ -27,9 +27,17 @@
     "url": "https://github.com/mako10k/shell-server/issues"
   },
   "homepage": "https://github.com/mako10k/shell-server#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "changelog:release": "node scripts/changelog-release.mjs",
+    "prepublishOnly": "npm run build",
+    "version:patch": "npm version patch",
+    "version:minor": "npm version minor",
+    "version:major": "npm version major",
     "test:e2e": "npm run build && node --test test/e2e-shell-server-cli.test.mjs"
   },
   "dependencies": {
