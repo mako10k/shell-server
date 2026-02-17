@@ -153,6 +153,19 @@ test('shell-server-cli E2E: daemon + tool + query + help', async (t) => {
   assert.equal(typeof serverStartPayload.result.serverId, 'string');
 
   const serverId = serverStartPayload.result.serverId;
+  const serverGetResult = runCli([
+    '--socket',
+    socketPath,
+    'tool',
+    'server-get',
+    '--server-id',
+    serverId,
+  ]);
+  assert.equal(serverGetResult.status, 0, serverGetResult.stderr);
+  const serverGetPayload = parseJsonOutput(serverGetResult);
+  assert.equal(serverGetPayload.ok, true);
+  assert.equal(serverGetPayload.result.serverId, serverId);
+
   const serverListAttachableResult = runCli([
     '--socket',
     socketPath,
