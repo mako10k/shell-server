@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "shell-server": "dist/index.js"
+    "shell-server": "dist/index.js",
+    "shell-server-cli": "dist/cli.js"
   },
   "exports": {
     ".": "./dist/index.js",

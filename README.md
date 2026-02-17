@@ -39,6 +39,23 @@ Default values (when options are omitted):
 - `--socket`: `MCP_SHELL_DAEMON_SOCKET` or auto-generated as
 	`$XDG_RUNTIME_DIR|os.tmpdir()/mcp-shell/<sha256(cwd)>/<branch>/daemon.sock`
 
+### shell-server-cli
+
+```bash
+shell-server-cli [--socket <path>] [--cwd <path>] [--branch <name>] [subcmd [subcmd options]]
+```
+
+Subcmd (function name):
+
+- `status`
+- `info`
+- `attach`
+- `detach`
+- `reattach`
+- `stop`
+
+`shell-server-cli` uses the same connection option resolution rules as `shell-server`.
+
 ## Build
 
 ```bash
