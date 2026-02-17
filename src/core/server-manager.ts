@@ -698,6 +698,30 @@ export class StubServerManager implements ServerManager {
   async get(options: ServerLookupOptions): Promise<ServerInfo | null> {
     const entry = this.servers.get(options.serverId);
     if (entry) {
+      // When daemon mode is enabled, prefer querying the daemon for richer info
+      // (including mcpSocketPath) even if we have a local cache entry.
+      if (this.isDaemonEnabled()) {
+        try {
+          const response = await this.requestDaemon(entry.socketPath, { action: 'info' });
+          if (response.ok) {
+            return {
+              serverId: options.serverId,
+              status: this.deriveStatus(response.attached, response.detached),
+              cwd: response.cwd || process.cwd(),
+              ...(response.socketPath ? { socketPath: response.socketPath } : { socketPath: entry.socketPath }),
+              ...(response.mcpSocketPath ? { mcpSocketPath: response.mcpSocketPath } : {}),
+              createdAt: response.startedAt || this.createdAt,
+              lastSeenAt: new Date().toISOString(),
+              ...(typeof response.pid === 'number'
+                ? { pid: response.pid }
+                : { pid: entry.child?.pid ?? process.pid }),
+            };
+          }
+        } catch {
+          // Fall back to cached info.
+        }
+      }
+
       return {
         serverId: options.serverId,
         status: this.deriveStatus(entry.attached, entry.detached),
