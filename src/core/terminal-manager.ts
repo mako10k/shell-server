@@ -10,7 +10,7 @@ import {
 } from '../types/index.js';
 import { generateId, getCurrentTimestamp, getSafeEnvironment } from '../utils/helpers.js';
 import {
-  MCPShellError,
+  ShellServerError,
   ResourceNotFoundError,
   ResourceLimitError,
   ExecutionError,
@@ -174,7 +174,7 @@ export class TerminalManager {
       this.terminals.set(terminalId, session);
       return terminalInfo;
     } catch (error) {
-      if (error instanceof MCPShellError) {
+      if (error instanceof ShellServerError) {
         throw error;
       }
       throw new ExecutionError(`Failed to create terminal: ${error}`, {

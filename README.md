@@ -27,16 +27,16 @@ shell-server --socket /tmp/mcp-shell/daemon.sock --cwd /path/to/repo --branch ma
 Option precedence for socket path resolution:
 
 - `--socket` (explicit socket path)
-- `MCP_SHELL_DAEMON_SOCKET`
-- auto-generated from `--cwd`/`MCP_SHELL_DAEMON_CWD` + `--branch`/`MCP_SHELL_DAEMON_BRANCH`
+- `SHELL_SERVER_DAEMON_SOCKET`
+- auto-generated from `--cwd`/`SHELL_SERVER_DAEMON_CWD` + `--branch`/`SHELL_SERVER_DAEMON_BRANCH`
 
 In other words, `--branch` affects the socket path only when an explicit socket path is not provided.
 
 Default values (when options are omitted):
 
 - `--cwd`: current process working directory (`process.cwd()`)
-- `--branch`: `MCP_SHELL_DAEMON_BRANCH` -> `MCP_SHELL_SERVER_BRANCH` -> `main`
-- `--socket`: `MCP_SHELL_DAEMON_SOCKET` or auto-generated as
+- `--branch`: `SHELL_SERVER_DAEMON_BRANCH` -> `SHELL_SERVER_BRANCH` -> `main`
+- `--socket`: `SHELL_SERVER_DAEMON_SOCKET` or auto-generated as
 	`$XDG_RUNTIME_DIR|os.tmpdir()/mcp-shell/<sha256(cwd)>/<branch>/daemon.sock`
 
 ### shell-server-cli
@@ -95,6 +95,18 @@ shell-server-cli --branch main tool shell-execute --command "echo hello" --execu
 
 `shell-server-cli` uses the same connection option resolution rules as `shell-server`.
 
+## Breaking Changes (v0.2.0)
+
+`v0.2.0` includes intentional breaking changes to remove MCP-specific naming from generic server components.
+
+- Env var prefix changed from `MCP_SHELL_*` to `SHELL_SERVER_*`.
+- Child daemon socket file changed from `mcp.sock` to `child.sock`.
+- Server/daemon info field changed from `mcpSocketPath` to `childSocketPath`.
+- Runtime error export changed from `MCPShellError` to `ShellServerError`.
+
+No backward-compatible fallback is provided in `v0.2.0`.
+Update all existing environment variables and client-side field references before upgrading.
+
 ## Build
 
 ```bash
@@ -137,6 +149,6 @@ npm publish
 
 ## Environment
 
-- `MCP_SHELL_DAEMON_SOCKET` (socket path override)
-- `MCP_SHELL_DAEMON_CWD` (working directory override)
-- `MCP_SHELL_DAEMON_BRANCH` (branch namespace override)
+- `SHELL_SERVER_DAEMON_SOCKET` (socket path override)
+- `SHELL_SERVER_DAEMON_CWD` (working directory override)
+- `SHELL_SERVER_DAEMON_BRANCH` (branch namespace override)

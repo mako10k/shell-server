@@ -1,6 +1,6 @@
 import { ErrorCategory, ErrorInfo } from '../types/index.js';
 
-export class MCPShellError extends Error {
+export class ShellServerError extends Error {
   public readonly code: string;
   public readonly category: ErrorCategory;
   public readonly details?: Record<string, unknown>;
@@ -15,7 +15,7 @@ export class MCPShellError extends Error {
     requestId?: string
   ) {
     super(message);
-    this.name = 'MCPShellError';
+    this.name = 'ShellServerError';
     this.code = code;
     this.category = category;
     this.details = details || {};
@@ -42,13 +42,13 @@ export class MCPShellError extends Error {
     return errorInfo;
   }
 
-  static fromError(error: unknown, requestId?: string): MCPShellError {
-    if (error instanceof MCPShellError) {
+  static fromError(error: unknown, requestId?: string): ShellServerError {
+    if (error instanceof ShellServerError) {
       return error;
     }
 
     if (error instanceof Error) {
-      return new MCPShellError(
+      return new ShellServerError(
         'SYSTEM_001',
         error.message,
         'SYSTEM',
@@ -57,7 +57,7 @@ export class MCPShellError extends Error {
       );
     }
 
-    return new MCPShellError(
+    return new ShellServerError(
       'SYSTEM_001',
       'Unknown error occurred',
       'SYSTEM',
@@ -68,7 +68,7 @@ export class MCPShellError extends Error {
 }
 
 // 定義済みエラー
-export class ResourceNotFoundError extends MCPShellError {
+export class ResourceNotFoundError extends ShellServerError {
   constructor(resourceType: string, id: string, requestId?: string) {
     super(
       'RESOURCE_001',
@@ -80,13 +80,13 @@ export class ResourceNotFoundError extends MCPShellError {
   }
 }
 
-export class ExecutionError extends MCPShellError {
+export class ExecutionError extends ShellServerError {
   constructor(message: string, details?: Record<string, unknown>, requestId?: string) {
     super('EXECUTION_001', message, 'EXECUTION', details, requestId);
   }
 }
 
-export class TimeoutError extends MCPShellError {
+export class TimeoutError extends ShellServerError {
   constructor(timeoutSeconds: number, requestId?: string) {
     super(
       'EXECUTION_002',
@@ -98,13 +98,13 @@ export class TimeoutError extends MCPShellError {
   }
 }
 
-export class SecurityError extends MCPShellError {
+export class SecurityError extends ShellServerError {
   constructor(message: string, details?: Record<string, unknown>, requestId?: string) {
     super('SECURITY_001', message, 'SECURITY', details, requestId);
   }
 }
 
-export class ResourceLimitError extends MCPShellError {
+export class ResourceLimitError extends ShellServerError {
   constructor(resource: string, limit: number, requestId?: string) {
     super(
       'RESOURCE_005',
@@ -115,3 +115,6 @@ export class ResourceLimitError extends MCPShellError {
     );
   }
 }
+
+export const MCPShellError = ShellServerError;
+

@@ -21,9 +21,9 @@ Options:
   -v, --version    Show version
 
 Environment:
-  MCP_SHELL_DAEMON_SOCKET  Socket path override
-  MCP_SHELL_DAEMON_CWD     Working directory override
-  MCP_SHELL_DAEMON_BRANCH  Branch name override
+  SHELL_SERVER_DAEMON_SOCKET  Socket path override
+  SHELL_SERVER_DAEMON_CWD     Working directory override
+  SHELL_SERVER_DAEMON_BRANCH  Branch name override
 `;
 
 function getArgValue(args: string[], name: string): string | undefined {
@@ -67,15 +67,15 @@ async function run(): Promise<void> {
   }
 
   const cwd =
-    getArgValue(args, '--cwd') || process.env['MCP_SHELL_DAEMON_CWD'] || process.cwd();
+    getArgValue(args, '--cwd') || process.env['SHELL_SERVER_DAEMON_CWD'] || process.cwd();
   const branch =
     getArgValue(args, '--branch') ||
-    process.env['MCP_SHELL_DAEMON_BRANCH'] ||
-    process.env['MCP_SHELL_SERVER_BRANCH'] ||
+    process.env['SHELL_SERVER_DAEMON_BRANCH'] ||
+    process.env['SHELL_SERVER_BRANCH'] ||
     DEFAULT_BRANCH;
   const socketPath =
     getArgValue(args, '--socket') ||
-    process.env['MCP_SHELL_DAEMON_SOCKET'] ||
+    process.env['SHELL_SERVER_DAEMON_SOCKET'] ||
     resolveSocketPath(cwd, branch);
 
   await startDaemon({ socketPath, cwd, branch });

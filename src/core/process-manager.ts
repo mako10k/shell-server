@@ -84,9 +84,9 @@ export class ProcessManager {
     this.maxConcurrentProcesses = maxConcurrentProcesses;
     this.outputDir = outputDir;
     this.fileManager = fileManager;
-    this.defaultWorkingDirectory = process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd();
-    this.allowedWorkingDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS']
-      ? process.env['MCP_SHELL_ALLOWED_WORKDIRS'].split(',').map((dir) => dir.trim())
+    this.defaultWorkingDirectory = process.env['SHELL_SERVER_DEFAULT_WORKDIR'] || process.cwd();
+    this.allowedWorkingDirectories = process.env['SHELL_SERVER_ALLOWED_WORKDIRS']
+      ? process.env['SHELL_SERVER_ALLOWED_WORKDIRS'].split(',').map((dir) => dir.trim())
       : [process.cwd()];
 
     // StreamPublisher初期化
@@ -97,7 +97,7 @@ export class ProcessManager {
     });
 
     // 環境変数でStreaming機能を制御（段階的展開、デフォルト有効）
-    this.enableStreaming = process.env['MCP_SHELL_ENABLE_STREAMING'] !== 'false';
+    this.enableStreaming = process.env['SHELL_SERVER_ENABLE_STREAMING'] !== 'false';
 
     if (this.enableStreaming) {
       this.initializeStreamingComponents();

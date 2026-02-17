@@ -3,6 +3,7 @@ import * as net from 'net';
 import * as path from 'path';
 import { spawn, type ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
+import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 import { createShellToolRuntime, dispatchToolCall, TOOL_NAMES, type ToolName } from '../runtime/tool-runtime.js';
@@ -11,7 +12,7 @@ import { logger } from '../utils/helpers.js';
 const DAEMON_COMPONENT = 'daemon';
 const SOCKET_REQUEST_TIMEOUT_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 500;
-const MCP_SOCKET_FILE_NAME = 'mcp.sock';
+const CHILD_SOCKET_FILE_NAME = 'child.sock';
 
 type DaemonRequest = {
   action?: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop' | 'tool';
@@ -33,6 +34,7 @@ type DaemonResponse = {
   cwd?: string;
   branch?: string;
   socketPath?: string;
+  childSocketPath?: string;
 };
 
 type HeartbeatMessage = {
@@ -80,9 +82,9 @@ export type DaemonStartOptions = {
 export function resolveDaemonOptionsFromProcess(): DaemonStartOptions {
   const args = process.argv.slice(2);
   const socketPath =
-    getArgValue(args, '--socket') || process.env['MCP_SHELL_DAEMON_SOCKET'];
-  const cwd = getArgValue(args, '--cwd') || process.env['MCP_SHELL_DAEMON_CWD'];
-  const branch = getArgValue(args, '--branch') || process.env['MCP_SHELL_DAEMON_BRANCH'];
+    getArgValue(args, '--socket') || process.env['SHELL_SERVER_DAEMON_SOCKET'];
+  const cwd = getArgValue(args, '--cwd') || process.env['SHELL_SERVER_DAEMON_CWD'];
+  const branch = getArgValue(args, '--branch') || process.env['SHELL_SERVER_DAEMON_BRANCH'];
 
   if (!socketPath) {
     throw new Error('Daemon socket path is required.');
@@ -133,30 +135,43 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
     attachedAt: undefined as string | undefined,
     detachedAt: undefined as string | undefined,
   };
-  let mcpChild: ChildProcess | null = null;
-  const mcpSocketPath = path.join(path.dirname(socketPath), MCP_SOCKET_FILE_NAME);
+  let childDaemonProcess: ChildProcess | null = null;
+  const childSocketPath = path.join(path.dirname(socketPath), CHILD_SOCKET_FILE_NAME);
 
-  const resolveMcpDaemonEntry = (): string => {
-    const override = process.env['MCP_SHELL_MCP_DAEMON_ENTRY'];
+  const resolveChildDaemonEntry = (): string => {
+    const override = process.env['SHELL_SERVER_CHILD_DAEMON_ENTRY'];
     if (override) {
       return override;
     }
 
+    const require = createRequire(import.meta.url);
+
+    try {
+      const mcpShellMainEntry = require.resolve('@mako10k/mcp-shell');
+      const fromPackageMain = path.resolve(path.dirname(mcpShellMainEntry), 'daemon.js');
+      if (existsSync(fromPackageMain)) {
+        return fromPackageMain;
+      }
+    } catch {
+      // Fallback to static path candidates.
+    }
+
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+
     // Prefer resolving relative to this module's location so that packaged
     // environments (VS Code extension / node_modules) work without relying on cwd.
-    const packagedCandidate = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '..',
-      'packages',
-      'mcp-shell',
-      'src',
-      'daemon.js'
-    );
+    const packagedCandidate = path.resolve(moduleDir, '..', '..', '..', 'mcp-shell', 'dist', 'daemon.js');
     const candidates = [
-      // Mono-repo build output co-located under dist/packages.
+      // Installed package in node_modules/@mako10k/shell-server -> ../mcp-shell.
       packagedCandidate,
+      // Mono-repo build output co-located under dist/packages.
+      path.resolve(moduleDir, '..', 'packages', 'mcp-shell', 'src', 'daemon.js'),
       // Legacy cwd-based mono-repo path.
       path.resolve(process.cwd(), 'dist/packages/mcp-shell/src/daemon.js'),
+      // Mono-repo package path when invoked from repository root.
+      path.resolve(process.cwd(), 'packages/mcp-shell/dist/daemon.js'),
+      // Installed package lookup from current working directory.
+      path.resolve(process.cwd(), 'node_modules', '@mako10k', 'mcp-shell', 'dist', 'daemon.js'),
     ];
 
     for (const candidate of candidates) {
@@ -165,38 +180,38 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
       }
     }
 
-    // Best guess (validated by fs.access in startMcpDaemon).
+    // Best guess (validated by fs.access in startChildDaemon).
     return packagedCandidate;
   };
 
-  const startMcpDaemon = async () => {
-    if (mcpChild) {
+  const startChildDaemon = async () => {
+    if (childDaemonProcess) {
       return;
     }
 
-    const daemonEntry = resolveMcpDaemonEntry();
+    const daemonEntry = resolveChildDaemonEntry();
     try {
       await fs.access(daemonEntry);
     } catch (error) {
-      logger.error('MCP daemon entry not found', { error: String(error), daemonEntry }, DAEMON_COMPONENT);
+      logger.error('Child daemon entry not found', { error: String(error), daemonEntry }, DAEMON_COMPONENT);
       return;
     }
 
     try {
-      await fs.unlink(mcpSocketPath);
+      await fs.unlink(childSocketPath);
     } catch {
       // Ignore missing socket.
     }
 
-    mcpChild = spawn(process.execPath, [daemonEntry], {
+    childDaemonProcess = spawn(process.execPath, [daemonEntry], {
       detached: true,
       stdio: 'ignore',
       env: {
         ...process.env,
-        MCP_SHELL_MCP_SOCKET: mcpSocketPath,
+        SHELL_SERVER_CHILD_DAEMON_SOCKET: childSocketPath,
       },
     });
-    mcpChild.unref();
+    childDaemonProcess.unref();
   };
   let attachSocket: net.Socket | null = null;
   let pongResolver: ((result: boolean) => void) | null = null;
@@ -329,7 +344,7 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
           cwd: process.cwd(),
           ...(branch ? { branch } : {}),
           ...(action === 'info' ? { socketPath } : {}),
-          ...(action === 'info' ? { mcpSocketPath } : {}),
+          ...(action === 'info' ? { childSocketPath } : {}),
         });
         return;
       }
@@ -418,9 +433,9 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
       }
       if (action === 'stop') {
         sendResponse(socket, { ok: true });
-        if (mcpChild?.pid) {
+        if (childDaemonProcess?.pid) {
           try {
-            process.kill(mcpChild.pid);
+            process.kill(childDaemonProcess.pid);
           } catch {
             // Best-effort shutdown only.
           }
@@ -483,7 +498,7 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
   });
 
   await fs.chmod(socketPath, 0o600);
-  await startMcpDaemon();
+  await startChildDaemon();
   logger.info('Daemon socket ready', { socketPath, cwd, branch }, DAEMON_COMPONENT);
 
   const shutdown = async () => {

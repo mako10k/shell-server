@@ -37,10 +37,10 @@ export class SecurityManager {
 
   private setDefaultRestrictions(): void {
     // Get default settings from environment variables
-    const defaultMode = (process.env['MCP_SHELL_SECURITY_MODE'] as SecurityMode) || 'permissive';
-    const defaultExecutionTime = parseInt(process.env['MCP_SHELL_MAX_EXECUTION_TIME'] || '300');
-    const defaultMemoryMb = parseInt(process.env['MCP_SHELL_MAX_MEMORY_MB'] || '1024');
-    const defaultNetworkEnabled = process.env['MCP_SHELL_ENABLE_NETWORK'] !== 'false';
+    const defaultMode = (process.env['SHELL_SERVER_SECURITY_MODE'] as SecurityMode) || 'permissive';
+    const defaultExecutionTime = parseInt(process.env['SHELL_SERVER_MAX_EXECUTION_TIME'] || '300');
+    const defaultMemoryMb = parseInt(process.env['SHELL_SERVER_MAX_MEMORY_MB'] || '1024');
+    const defaultNetworkEnabled = process.env['SHELL_SERVER_ENABLE_NETWORK'] !== 'false';
 
     // Automatic configuration for Enhanced Mode
     if (defaultMode === 'enhanced' || defaultMode === 'enhanced-fast') {
@@ -67,56 +67,56 @@ export class SecurityManager {
    */
   private loadEnhancedConfigFromEnv(): void {
     // Enhanced mode (backward compatibility)
-    if (process.env['MCP_SHELL_ENHANCED_MODE'] === 'true') {
+    if (process.env['SHELL_SERVER_ENHANCED_MODE'] === 'true') {
       this.enhancedConfig.enhanced_mode_enabled = true;
-    } else if (process.env['MCP_SHELL_ENHANCED_MODE'] === 'false') {
+    } else if (process.env['SHELL_SERVER_ENHANCED_MODE'] === 'false') {
       this.enhancedConfig.enhanced_mode_enabled = false;
     }
 
     // LLM evaluation (backward compatibility)
-    if (process.env['MCP_SHELL_LLM_EVALUATION'] === 'true') {
+    if (process.env['SHELL_SERVER_LLM_EVALUATION'] === 'true') {
       this.enhancedConfig.llm_evaluation_enabled = true;
-    } else if (process.env['MCP_SHELL_LLM_EVALUATION'] === 'false') {
+    } else if (process.env['SHELL_SERVER_LLM_EVALUATION'] === 'false') {
       this.enhancedConfig.llm_evaluation_enabled = false;
     }
 
     // Safe command skip (new simplified naming)
-    if (process.env['MCP_SHELL_SKIP_SAFE_COMMANDS'] === 'true') {
+    if (process.env['SHELL_SERVER_SKIP_SAFE_COMMANDS'] === 'true') {
       this.enhancedConfig.enable_pattern_filtering = true;
     }
 
     // Pattern matching pre-filtering (backward compatibility)
-    if (process.env['MCP_SHELL_ENABLE_PATTERN_FILTERING'] === 'true') {
+    if (process.env['SHELL_SERVER_ENABLE_PATTERN_FILTERING'] === 'true') {
       this.enhancedConfig.enable_pattern_filtering = true;
     }
 
     // Other enhanced security settings
-    if (process.env['MCP_SHELL_ELICITATION'] === 'true') {
+    if (process.env['SHELL_SERVER_ELICITATION'] === 'true') {
       this.enhancedConfig.elicitation_enabled = true;
     }
 
-    if (process.env['MCP_SHELL_BASIC_SAFE_CLASSIFICATION'] === 'false') {
+    if (process.env['SHELL_SERVER_BASIC_SAFE_CLASSIFICATION'] === 'false') {
       this.enhancedConfig.basic_safe_classification = false;
     }
 
     // LLM provider settings
-    if (process.env['MCP_SHELL_LLM_PROVIDER']) {
-      this.enhancedConfig.llm_provider = process.env['MCP_SHELL_LLM_PROVIDER'] as
+    if (process.env['SHELL_SERVER_LLM_PROVIDER']) {
+      this.enhancedConfig.llm_provider = process.env['SHELL_SERVER_LLM_PROVIDER'] as
         | 'openai'
         | 'anthropic'
         | 'custom';
     }
 
-    if (process.env['MCP_SHELL_LLM_MODEL']) {
-      this.enhancedConfig.llm_model = process.env['MCP_SHELL_LLM_MODEL'];
+    if (process.env['SHELL_SERVER_LLM_MODEL']) {
+      this.enhancedConfig.llm_model = process.env['SHELL_SERVER_LLM_MODEL'];
     }
 
-    if (process.env['MCP_SHELL_LLM_API_KEY']) {
-      this.enhancedConfig.llm_api_key = process.env['MCP_SHELL_LLM_API_KEY'];
+    if (process.env['SHELL_SERVER_LLM_API_KEY']) {
+      this.enhancedConfig.llm_api_key = process.env['SHELL_SERVER_LLM_API_KEY'];
     }
 
-    if (process.env['MCP_SHELL_LLM_TIMEOUT']) {
-      const timeout = parseInt(process.env['MCP_SHELL_LLM_TIMEOUT']);
+    if (process.env['SHELL_SERVER_LLM_TIMEOUT']) {
+      const timeout = parseInt(process.env['SHELL_SERVER_LLM_TIMEOUT']);
       if (!isNaN(timeout) && timeout > 0 && timeout <= 60) {
         this.enhancedConfig.llm_timeout_seconds = timeout;
       }

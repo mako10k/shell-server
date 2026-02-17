@@ -18,7 +18,7 @@ export type { CreateMessageCallback } from '../security/chat-completion-adapter.
 export type { ElicitationHandler } from '../security/evaluator-types.js';
 
 export { BackofficeServer } from '../backoffice/server.js';
-export { MCPShellError } from '../utils/errors.js';
+export { ShellServerError } from '../utils/errors.js';
 export { ExecutionInfo } from '../types/index.js';
 export {
   ShellExecuteParamsSchema,

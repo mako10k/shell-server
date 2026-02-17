@@ -8,7 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
-import { MCPShellError } from '../utils/errors.js';
+import { ShellServerError } from '../utils/errors.js';
 
 export type ServerStatus = 'running' | 'stopped' | 'detached' | 'unknown';
 
@@ -17,7 +17,7 @@ export type ServerInfo = {
   status: ServerStatus;
   cwd: string;
   socketPath?: string;
-  mcpSocketPath?: string;
+  childSocketPath?: string;
   createdAt?: string;
   lastSeenAt?: string;
   pid?: number;
@@ -86,7 +86,7 @@ type DaemonResponse = {
   cwd?: string;
   branch?: string;
   socketPath?: string;
-  mcpSocketPath?: string;
+  childSocketPath?: string;
 };
 
 type HeartbeatMessage = {
@@ -108,7 +108,7 @@ export class StubServerManager implements ServerManager {
   >();
 
   private getBranch(): string {
-    return process.env['MCP_SHELL_SERVER_BRANCH'] || DEFAULT_BRANCH;
+    return process.env['SHELL_SERVER_BRANCH'] || DEFAULT_BRANCH;
   }
 
   private getRuntimeRoot(): string {
@@ -118,8 +118,8 @@ export class StubServerManager implements ServerManager {
 
   private isDaemonEnabled(): boolean {
     // Default ON to enable auto-start/reattach behavior.
-    // Opt-out explicitly with MCP_SHELL_DAEMON_ENABLED=false.
-    return process.env['MCP_SHELL_DAEMON_ENABLED'] !== 'false';
+    // Opt-out explicitly with SHELL_SERVER_DAEMON_ENABLED=false.
+    return process.env['SHELL_SERVER_DAEMON_ENABLED'] !== 'false';
   }
 
   private hashCwd(cwd: string): string {
@@ -149,7 +149,7 @@ export class StubServerManager implements ServerManager {
   }
 
   private resolveDaemonEntry(): string {
-    const override = process.env['MCP_SHELL_DAEMON_ENTRY'];
+    const override = process.env['SHELL_SERVER_DAEMON_ENTRY'];
     if (override) {
       return override;
     }
@@ -231,7 +231,7 @@ export class StubServerManager implements ServerManager {
       const timeout = setTimeout(() => {
         socket.destroy();
         reject(
-          new MCPShellError('SYSTEM_013', 'Daemon request timed out', 'SYSTEM', {
+          new ShellServerError('SYSTEM_013', 'Daemon request timed out', 'SYSTEM', {
             socketPath,
             action: request.action,
           })
@@ -256,7 +256,7 @@ export class StubServerManager implements ServerManager {
         const line = buffer.trim();
         if (!line) {
           reject(
-            new MCPShellError('SYSTEM_013', 'Daemon response was empty', 'SYSTEM', {
+            new ShellServerError('SYSTEM_013', 'Daemon response was empty', 'SYSTEM', {
               socketPath,
               action: request.action,
             })
@@ -268,7 +268,7 @@ export class StubServerManager implements ServerManager {
           resolve(JSON.parse(line) as DaemonResponse);
         } catch (error) {
           reject(
-            new MCPShellError('SYSTEM_013', 'Failed to parse daemon response', 'SYSTEM', {
+            new ShellServerError('SYSTEM_013', 'Failed to parse daemon response', 'SYSTEM', {
               socketPath,
               action: request.action,
               error: String(error),
@@ -280,7 +280,7 @@ export class StubServerManager implements ServerManager {
       socket.on('error', (error) => {
         cleanup();
         reject(
-          new MCPShellError('SYSTEM_013', 'Daemon request failed', 'SYSTEM', {
+          new ShellServerError('SYSTEM_013', 'Daemon request failed', 'SYSTEM', {
             socketPath,
             action: request.action,
             error: String(error),
@@ -303,7 +303,7 @@ export class StubServerManager implements ServerManager {
       const timeout = setTimeout(() => {
         socket.destroy();
         reject(
-          new MCPShellError('SYSTEM_013', 'Attach request timed out', 'SYSTEM', {
+          new ShellServerError('SYSTEM_013', 'Attach request timed out', 'SYSTEM', {
             socketPath,
           })
         );
@@ -349,7 +349,7 @@ export class StubServerManager implements ServerManager {
             if (!response.ok) {
               socket.end();
               reject(
-                new MCPShellError('SYSTEM_013', 'Daemon attach failed', 'SYSTEM', {
+                new ShellServerError('SYSTEM_013', 'Daemon attach failed', 'SYSTEM', {
                   socketPath,
                   error: response.error,
                 })
@@ -368,7 +368,7 @@ export class StubServerManager implements ServerManager {
       socket.on('error', (error) => {
         cleanup();
         reject(
-          new MCPShellError('SYSTEM_013', 'Attach connection failed', 'SYSTEM', {
+          new ShellServerError('SYSTEM_013', 'Attach connection failed', 'SYSTEM', {
             socketPath,
             error: String(error),
           })
@@ -563,7 +563,7 @@ export class StubServerManager implements ServerManager {
           };
         }
 
-        throw new MCPShellError('RESOURCE_006', 'Server is already running', 'RESOURCE', {
+        throw new ShellServerError('RESOURCE_006', 'Server is already running', 'RESOURCE', {
           socketPath,
         });
       }
@@ -578,7 +578,7 @@ export class StubServerManager implements ServerManager {
       try {
         await fs.access(daemonEntry);
       } catch (error) {
-        throw new MCPShellError('SYSTEM_011', 'Daemon entry not found', 'SYSTEM', {
+        throw new ShellServerError('SYSTEM_011', 'Daemon entry not found', 'SYSTEM', {
           daemonEntry,
           error: String(error),
         });
@@ -592,16 +592,16 @@ export class StubServerManager implements ServerManager {
           stdio: 'ignore',
           env: {
             ...process.env,
-            MCP_SHELL_DAEMON_SOCKET: socketPath,
-            MCP_SHELL_DAEMON_CWD: cwd,
-            MCP_SHELL_DAEMON_BRANCH: branch,
+            SHELL_SERVER_DAEMON_SOCKET: socketPath,
+            SHELL_SERVER_DAEMON_CWD: cwd,
+            SHELL_SERVER_DAEMON_BRANCH: branch,
           },
         }
       );
       child.unref();
 
       if (!(await this.waitForSocketReady(socketPath))) {
-        throw new MCPShellError('SYSTEM_012', 'Daemon socket did not become ready', 'SYSTEM', {
+        throw new ShellServerError('SYSTEM_012', 'Daemon socket did not become ready', 'SYSTEM', {
           socketPath,
         });
       }
@@ -664,7 +664,7 @@ export class StubServerManager implements ServerManager {
 
     const parsed = this.parseServerId(options.serverId);
     if (!parsed) {
-      throw new MCPShellError('RESOURCE_001', 'Server not found', 'RESOURCE', {
+      throw new ShellServerError('RESOURCE_001', 'Server not found', 'RESOURCE', {
         serverId: options.serverId,
       });
     }
@@ -674,7 +674,7 @@ export class StubServerManager implements ServerManager {
       if (this.isDaemonEnabled() && (await this.canConnectSocket(socketPath))) {
         const response = await this.requestDaemon(socketPath, { action: 'stop' });
         if (!response.ok) {
-          throw new MCPShellError('SYSTEM_013', 'Daemon stop failed', 'SYSTEM', {
+          throw new ShellServerError('SYSTEM_013', 'Daemon stop failed', 'SYSTEM', {
             serverId: options.serverId,
             error: response.error,
           });
@@ -690,7 +690,7 @@ export class StubServerManager implements ServerManager {
       return;
     }
 
-    throw new MCPShellError('RESOURCE_001', 'Server not found', 'RESOURCE', {
+    throw new ShellServerError('RESOURCE_001', 'Server not found', 'RESOURCE', {
       serverId: options.serverId,
     });
   }
@@ -699,17 +699,18 @@ export class StubServerManager implements ServerManager {
     const entry = this.servers.get(options.serverId);
     if (entry) {
       // When daemon mode is enabled, prefer querying the daemon for richer info
-      // (including mcpSocketPath) even if we have a local cache entry.
+      // (including child socket path) even if we have a local cache entry.
       if (this.isDaemonEnabled()) {
         try {
           const response = await this.requestDaemon(entry.socketPath, { action: 'info' });
           if (response.ok) {
+            const childSocketPath = response.childSocketPath;
             return {
               serverId: options.serverId,
               status: this.deriveStatus(response.attached, response.detached),
               cwd: response.cwd || process.cwd(),
               ...(response.socketPath ? { socketPath: response.socketPath } : { socketPath: entry.socketPath }),
-              ...(response.mcpSocketPath ? { mcpSocketPath: response.mcpSocketPath } : {}),
+              ...(childSocketPath ? { childSocketPath } : {}),
               createdAt: response.startedAt || this.createdAt,
               lastSeenAt: new Date().toISOString(),
               ...(typeof response.pid === 'number'
@@ -749,12 +750,14 @@ export class StubServerManager implements ServerManager {
         return null;
       }
 
+      const childSocketPath = response.childSocketPath;
+
       return {
         serverId: options.serverId,
         status: this.deriveStatus(response.attached, response.detached),
         cwd: response.cwd || process.cwd(),
         ...(response.socketPath ? { socketPath: response.socketPath } : { socketPath }),
-        ...(response.mcpSocketPath ? { mcpSocketPath: response.mcpSocketPath } : {}),
+        ...(childSocketPath ? { childSocketPath } : {}),
         createdAt: response.startedAt || this.createdAt,
         lastSeenAt: new Date().toISOString(),
         ...(typeof response.pid === 'number' ? { pid: response.pid } : {}),
@@ -787,7 +790,7 @@ export class StubServerManager implements ServerManager {
 
     const socketPath = this.buildSocketPathFromServerId(options.serverId);
     if (!socketPath || !(await this.socketExists(socketPath))) {
-      throw new MCPShellError('RESOURCE_001', 'Server not found', 'RESOURCE', {
+      throw new ShellServerError('RESOURCE_001', 'Server not found', 'RESOURCE', {
         serverId: options.serverId,
       });
     }
@@ -795,7 +798,7 @@ export class StubServerManager implements ServerManager {
     if (this.isDaemonEnabled()) {
       const response = await this.requestDaemon(socketPath, { action: 'detach' });
       if (!response.ok) {
-        throw new MCPShellError('SYSTEM_013', 'Daemon detach failed', 'SYSTEM', {
+        throw new ShellServerError('SYSTEM_013', 'Daemon detach failed', 'SYSTEM', {
           serverId: options.serverId,
           error: response.error,
         });
@@ -803,7 +806,7 @@ export class StubServerManager implements ServerManager {
       return;
     }
 
-    throw new MCPShellError('SYSTEM_010', NOT_IMPLEMENTED_MESSAGE, 'SYSTEM', {
+    throw new ShellServerError('SYSTEM_010', NOT_IMPLEMENTED_MESSAGE, 'SYSTEM', {
       operation: 'detach',
       serverId: options.serverId,
     });
@@ -813,7 +816,7 @@ export class StubServerManager implements ServerManager {
     const entry = this.servers.get(options.serverId);
     if (entry) {
       if (entry.attached && !entry.detached) {
-        throw new MCPShellError('RESOURCE_006', 'Server is already attached', 'RESOURCE', {
+        throw new ShellServerError('RESOURCE_006', 'Server is already attached', 'RESOURCE', {
           serverId: options.serverId,
         });
       }
@@ -833,7 +836,7 @@ export class StubServerManager implements ServerManager {
 
     const socketPath = this.buildSocketPathFromServerId(options.serverId);
     if (!socketPath || !(await this.socketExists(socketPath))) {
-      throw new MCPShellError('RESOURCE_001', 'Server not found', 'RESOURCE', {
+      throw new ShellServerError('RESOURCE_001', 'Server not found', 'RESOURCE', {
         serverId: options.serverId,
       });
     }
@@ -842,7 +845,7 @@ export class StubServerManager implements ServerManager {
       const { socket, response } = await this.openAttachConnection(socketPath);
       if (response.error === 'already_attached') {
         socket.end();
-        throw new MCPShellError('RESOURCE_006', 'Server is already attached', 'RESOURCE', {
+        throw new ShellServerError('RESOURCE_006', 'Server is already attached', 'RESOURCE', {
           serverId: options.serverId,
         });
       }
@@ -865,7 +868,7 @@ export class StubServerManager implements ServerManager {
       };
     }
 
-    throw new MCPShellError('SYSTEM_010', NOT_IMPLEMENTED_MESSAGE, 'SYSTEM', {
+    throw new ShellServerError('SYSTEM_010', NOT_IMPLEMENTED_MESSAGE, 'SYSTEM', {
       operation: 'reattach',
       serverId: options.serverId,
     });

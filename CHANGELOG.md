@@ -22,6 +22,45 @@ All notable changes to this project are documented in this file.
 ### Notes
 - リリース時の補足（移行手順、既知の制約など）
 
+## [0.2.0] - 2026-02-17
+
+### Changed
+- **Breaking:** daemon / CLI / server-manager / security / process-manager の環境変数プレフィックスを `MCP_SHELL_*` から `SHELL_SERVER_*` へ統一。
+- **Breaking:** daemon の子ソケット名を `mcp.sock` から `child.sock` に変更。
+- **Breaking:** daemon `info` 応答および `ServerInfo` で返す子ソケット項目を `mcpSocketPath` から `childSocketPath` に変更。
+- **Breaking:** runtime export のエラー名を `MCPShellError` から `ShellServerError` に変更（`@mako10k/shell-server/tool-runtime` 経由の参照名が変更）。
+
+### Fixed
+- `mcp-shell` 経由起動時に `daemon.sock` のみ作成されて `mcp.sock` が作成されない経路を修正し、子 daemon エントリ解決を強化。
+
+### Notes
+- 互換性維持のための旧環境変数 fallback は **非対応**（意図的な破壊的変更）。
+- 旧設定を使用している場合は、以下を新名称へ置換してください。
+	- `MCP_SHELL_DAEMON_SOCKET` -> `SHELL_SERVER_DAEMON_SOCKET`
+	- `MCP_SHELL_DAEMON_CWD` -> `SHELL_SERVER_DAEMON_CWD`
+	- `MCP_SHELL_DAEMON_BRANCH` -> `SHELL_SERVER_DAEMON_BRANCH`
+	- `MCP_SHELL_SERVER_BRANCH` -> `SHELL_SERVER_BRANCH`
+	- `MCP_SHELL_DAEMON_ENTRY` -> `SHELL_SERVER_DAEMON_ENTRY`
+	- `MCP_SHELL_DAEMON_ENABLED` -> `SHELL_SERVER_DAEMON_ENABLED`
+	- `MCP_SHELL_MCP_DAEMON_ENTRY` / `MCP_SHELL_CHILD_DAEMON_ENTRY` -> `SHELL_SERVER_CHILD_DAEMON_ENTRY`
+	- `MCP_SHELL_DEFAULT_WORKDIR` -> `SHELL_SERVER_DEFAULT_WORKDIR`
+	- `MCP_SHELL_ALLOWED_WORKDIRS` -> `SHELL_SERVER_ALLOWED_WORKDIRS`
+	- `MCP_SHELL_ENABLE_STREAMING` -> `SHELL_SERVER_ENABLE_STREAMING`
+	- `MCP_SHELL_SECURITY_MODE` -> `SHELL_SERVER_SECURITY_MODE`
+	- `MCP_SHELL_MAX_EXECUTION_TIME` -> `SHELL_SERVER_MAX_EXECUTION_TIME`
+	- `MCP_SHELL_MAX_MEMORY_MB` -> `SHELL_SERVER_MAX_MEMORY_MB`
+	- `MCP_SHELL_ENABLE_NETWORK` -> `SHELL_SERVER_ENABLE_NETWORK`
+	- `MCP_SHELL_ENHANCED_MODE` -> `SHELL_SERVER_ENHANCED_MODE`
+	- `MCP_SHELL_LLM_EVALUATION` -> `SHELL_SERVER_LLM_EVALUATION`
+	- `MCP_SHELL_SKIP_SAFE_COMMANDS` -> `SHELL_SERVER_SKIP_SAFE_COMMANDS`
+	- `MCP_SHELL_ENABLE_PATTERN_FILTERING` -> `SHELL_SERVER_ENABLE_PATTERN_FILTERING`
+	- `MCP_SHELL_ELICITATION` -> `SHELL_SERVER_ELICITATION`
+	- `MCP_SHELL_BASIC_SAFE_CLASSIFICATION` -> `SHELL_SERVER_BASIC_SAFE_CLASSIFICATION`
+	- `MCP_SHELL_LLM_PROVIDER` -> `SHELL_SERVER_LLM_PROVIDER`
+	- `MCP_SHELL_LLM_MODEL` -> `SHELL_SERVER_LLM_MODEL`
+	- `MCP_SHELL_LLM_API_KEY` -> `SHELL_SERVER_LLM_API_KEY`
+	- `MCP_SHELL_LLM_TIMEOUT` -> `SHELL_SERVER_LLM_TIMEOUT`
+
 ## [0.1.1] - 2026-02-17
 
 ### Added
