@@ -22,6 +22,11 @@ All notable changes to this project are documented in this file.
 ### Notes
 - リリース時の補足（移行手順、既知の制約など）
 
+## [0.1.1] - 2026-02-17
+
+### Added
+- `npm run changelog:release -- <version>` で `[Unreleased]` から次バージョン見出しを生成できる補助スクリプトを追加
+
 ## [0.1.0] - 2026-02-17
 
 ### Added

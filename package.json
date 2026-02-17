@@ -1,6 +1,6 @@
 {
   "name": "@mako10k/shell-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shell execution daemon and runtime utilities for MCP tools.",
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/mako10k/shell-server"
+    "url": "git+https://github.com/mako10k/shell-server.git"
   },
   "bugs": {
     "url": "https://github.com/mako10k/shell-server/issues"
