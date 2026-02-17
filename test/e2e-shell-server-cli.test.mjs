@@ -126,6 +126,62 @@ test('shell-server-cli E2E: daemon + tool + query + help', async (t) => {
   assert.equal(Array.isArray(historyPayload.entries), true);
   assert.equal(typeof historyPayload.pagination, 'object');
 
+  const serverCurrentResult = runCli([
+    '--socket',
+    socketPath,
+    'tool',
+    'server-current',
+  ]);
+  assert.equal(serverCurrentResult.status, 0, serverCurrentResult.stderr);
+  const serverCurrentPayload = parseJsonOutput(serverCurrentResult);
+  assert.equal(serverCurrentPayload.ok, true);
+  assert.equal(serverCurrentPayload.result.status, 'running');
+
+  const serverStartResult = runCli([
+    '--socket',
+    socketPath,
+    'tool',
+    'server-start',
+    '--cwd',
+    projectRoot,
+    '--allow-existing',
+    'true',
+  ]);
+  assert.equal(serverStartResult.status, 0, serverStartResult.stderr);
+  const serverStartPayload = parseJsonOutput(serverStartResult);
+  assert.equal(serverStartPayload.ok, true);
+  assert.equal(typeof serverStartPayload.result.serverId, 'string');
+
+  const serverId = serverStartPayload.result.serverId;
+  const serverListAttachableResult = runCli([
+    '--socket',
+    socketPath,
+    'tool',
+    'server-list-attachable',
+    '--cwd',
+    projectRoot,
+  ]);
+  assert.equal(serverListAttachableResult.status, 0, serverListAttachableResult.stderr);
+  const serverListPayload = parseJsonOutput(serverListAttachableResult);
+  assert.equal(serverListPayload.ok, true);
+  assert.equal(Array.isArray(serverListPayload.result), true);
+  assert.equal(serverListPayload.result.some((entry) => entry.serverId === serverId), true);
+
+  const serverStopResult = runCli([
+    '--socket',
+    socketPath,
+    'tool',
+    'server-stop',
+    '--server-id',
+    serverId,
+    '--force',
+    'true',
+  ]);
+  assert.equal(serverStopResult.status, 0, serverStopResult.stderr);
+  const serverStopPayload = parseJsonOutput(serverStopResult);
+  assert.equal(serverStopPayload.ok, true);
+  assert.equal(serverStopPayload.result.ok, true);
+
   const invalidQueryResult = runCli([
     '--socket',
     socketPath,
