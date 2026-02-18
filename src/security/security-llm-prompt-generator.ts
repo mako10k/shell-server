@@ -48,7 +48,7 @@ export interface AdditionalContextContext {
 
 export class SecurityLLMPromptGenerator {
   /**
-   * コマンド履歴とELICITATION履歴を時系列でマージ
+   * Merge command history and elicitation history in chronological order
    */
   private mergeHistoryByTimestamp(
     commandHistory: CommandHistoryEntry[],
@@ -84,7 +84,7 @@ Final Decision: ${entry.evaluationResult}` : ''}`
       });
     });
 
-    // 時系列でソート（新しい順）
+    // Sort by timestamp (newest first)
     return merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
 
@@ -249,7 +249,7 @@ ${context.detectedPatterns ? `**Detected Patterns**: ${context.detectedPatterns.
     const hasCommandHistory = commandHistory && commandHistory.length > 0;
     const hasElicitationHistory = elicitationHistory && elicitationHistory.length > 0;
 
-    // 両方の履歴がある場合は時系列マージ
+    // If both histories exist, merge them chronologically
     if (hasCommandHistory && hasElicitationHistory) {
       const mergedHistory = this.mergeHistoryByTimestamp(commandHistory, elicitationHistory);
 

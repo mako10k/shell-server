@@ -27,7 +27,7 @@ export class ExecutorServer {
   }> = new Map();
   // Track running child processes for kill API
   private processes: Map<string, import('child_process').ChildProcess> = new Map();
-  // 簡易イベント: 実行ごとの出力更新/終了を通知（BackofficeのSSE移行の布石）
+  // Simple events: notify per-execution output updates/exits (preparation for Backoffice SSE)
   private events = new EventEmitter();
 
   constructor(host?: string, port?: number) {
@@ -194,7 +194,7 @@ export class ExecutorServer {
       return;
     }
 
-        // 初期スナップショット
+        // Initial snapshot
         this.writeSSE(res, 'state', item);
         const out: Record<string, unknown> = { execution_id: id };
         if (typeof item.stdout === 'string') out['stdout'] = item.stdout;
@@ -227,7 +227,7 @@ export class ExecutorServer {
     this.events.on(`exec:output:${id}`, onOutput);
     this.events.on(`exec:exit:${id}`, onExit);
 
-    // ハートビート
+    // Heartbeat
     const heartbeat = startHeartbeat((event, data) => this.writeSSE(res, event, data));
 
     req.on('close', cleanup);

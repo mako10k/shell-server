@@ -342,7 +342,7 @@ export class SecurityManager {
   // Legacy detectDangerousPatterns removed (Phase-out); rely on LLM & basic safety rules.
 
   auditCommand(command: string, workingDirectory?: string): void {
-    // Enhanced Security Modeの場合は従来の危険パターン検出をスキップ
+    // In Enhanced Security Mode, skip legacy dangerous pattern detection
     // Enhanced Safety Evaluator performs all validation
     if (
       this.restrictions?.security_mode === 'enhanced' ||
