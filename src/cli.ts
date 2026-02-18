@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { z } from 'zod';
 
 import {
@@ -33,6 +34,8 @@ import { TerminalOperateParamsSchema } from './types/quick-schemas.js';
 const DEFAULT_BRANCH = 'main';
 const RUNTIME_DIR_NAME = 'mcp-shell';
 const SOCKET_REQUEST_TIMEOUT_MS = 1000;
+const DAEMON_STARTUP_TIMEOUT_MS = 5000;
+const DAEMON_STARTUP_POLL_INTERVAL_MS = 100;
 const ALLOWED_SUBCMDS = ['status', 'info', 'attach', 'detach', 'reattach', 'stop'] as const;
 
 type Subcmd = (typeof ALLOWED_SUBCMDS)[number];
@@ -105,6 +108,9 @@ Environment:
   SHELL_SERVER_DAEMON_SOCKET  Socket path override
   SHELL_SERVER_DAEMON_CWD     Working directory override
   SHELL_SERVER_DAEMON_BRANCH  Branch name override
+
+Behavior:
+  - Daemon is auto-started on first request when socket is unavailable
 `;
 
 function getArgValue(args: string[], name: string): string | undefined {
@@ -564,6 +570,89 @@ async function requestDaemon(socketPath: string, request: DaemonRequest): Promis
   });
 }
 
+function isDaemonUnavailableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('ENOENT') || message.includes('ECONNREFUSED') || message.includes('ENOTSOCK');
+}
+
+function resolveDaemonEntryPath(): string {
+  return fileURLToPath(new URL('./index.js', import.meta.url));
+}
+
+async function canConnectSocket(socketPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ path: socketPath });
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, 300);
+
+    socket.once('connect', () => {
+      clearTimeout(timeout);
+      socket.end();
+      resolve(true);
+    });
+
+    socket.once('error', () => {
+      clearTimeout(timeout);
+      resolve(false);
+    });
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function ensureDaemonStarted(options: {
+  socketPath: string;
+  cwd: string;
+  branch: string;
+}): Promise<void> {
+  const daemonEntry = resolveDaemonEntryPath();
+  const daemonProcess = spawn(
+    process.execPath,
+    [daemonEntry, '--socket', options.socketPath, '--cwd', options.cwd, '--branch', options.branch],
+    {
+      detached: true,
+      stdio: 'ignore',
+      env: process.env,
+    }
+  );
+  daemonProcess.unref();
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < DAEMON_STARTUP_TIMEOUT_MS) {
+    if (await canConnectSocket(options.socketPath)) {
+      return;
+    }
+    await sleep(DAEMON_STARTUP_POLL_INTERVAL_MS);
+  }
+
+  throw new Error(
+    `Failed to start daemon within ${DAEMON_STARTUP_TIMEOUT_MS}ms: ${options.socketPath}`
+  );
+}
+
+async function requestDaemonWithAutoStart(
+  socketPath: string,
+  request: DaemonRequest,
+  options: { cwd: string; branch: string }
+): Promise<unknown> {
+  try {
+    return await requestDaemon(socketPath, request);
+  } catch (error) {
+    if (request.action === 'stop' || !isDaemonUnavailableError(error)) {
+      throw error;
+    }
+
+    await ensureDaemonStarted({ socketPath, cwd: options.cwd, branch: options.branch });
+    return requestDaemon(socketPath, request);
+  }
+}
+
 async function run(): Promise<void> {
   const args = process.argv.slice(2);
   if (hasFlag(args, '-v') || hasFlag(args, '--version')) {
@@ -627,11 +716,11 @@ async function run(): Promise<void> {
       ...inputJson,
       ...parseToolParams(rest.slice(2)),
     };
-    const response = await requestDaemon(socketPath, {
+    const response = await requestDaemonWithAutoStart(socketPath, {
       action: 'tool',
       tool_name: toolName,
       params,
-    });
+    }, { cwd, branch });
     process.exitCode = await printResponse(response, query);
     return;
   }
@@ -642,7 +731,7 @@ async function run(): Promise<void> {
     );
   }
 
-  const response = await requestDaemon(socketPath, { action: subcmdRaw });
+  const response = await requestDaemonWithAutoStart(socketPath, { action: subcmdRaw }, { cwd, branch });
   process.exitCode = await printResponse(response, query);
 }
 

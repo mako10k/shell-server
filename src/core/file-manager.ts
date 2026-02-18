@@ -51,6 +51,7 @@ export class FileManager {
       size,
       created_at: getCurrentTimestamp(),
       path: filePath,
+      subscribed: false,
     };
 
     if (executionId) {
@@ -112,7 +113,15 @@ export class FileManager {
     is_truncated: boolean;
     encoding: string;
   }> {
-    const fileInfo = this.getFile(outputId);
+    const fileInfo = this.files.get(outputId);
+    if (!fileInfo) {
+      throw new ResourceNotFoundError('file', outputId);
+    }
+
+    if (!fileInfo.subscribed) {
+      fileInfo.subscribed = true;
+      this.files.set(outputId, fileInfo);
+    }
 
     try {
       const { content, totalSize, isTruncated } = await safeReadFile(
@@ -133,6 +142,16 @@ export class FileManager {
     } catch (error) {
       throw new Error(`Failed to read file ${outputId}: ${error}`);
     }
+  }
+
+  getSubscribedFileCount(): number {
+    let count = 0;
+    for (const file of this.files.values()) {
+      if (file.subscribed) {
+        count += 1;
+      }
+    }
+    return count;
   }
 
   listFiles(filter?: {

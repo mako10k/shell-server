@@ -532,6 +532,24 @@ export class TerminalManager {
     };
   }
 
+  getSubscribedTerminalCount(): number {
+    let count = 0;
+
+    for (const [terminalId, session] of this.terminals.entries()) {
+      const totalLines = session.outputBuffer.length;
+      if (totalLines <= 0) {
+        continue;
+      }
+
+      const readPosition = this.terminalReadPositions.get(terminalId) || 0;
+      if (readPosition < totalLines) {
+        count += 1;
+      }
+    }
+
+    return count;
+  }
+
   resizeTerminal(
     terminalId: string,
     dimensions: Dimensions

@@ -151,6 +151,7 @@ export interface FileInfo {
   execution_id?: string;
   created_at: string;
   path: string;
+  subscribed?: boolean;
 }
 
 // 監視情報

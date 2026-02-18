@@ -1,6 +1,6 @@
 {
   "name": "@mako10k/shell-server",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Shell execution daemon and runtime utilities for MCP tools.",
   "type": "module",
   "main": "dist/index.js",

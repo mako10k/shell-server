@@ -13,6 +13,30 @@ const DAEMON_COMPONENT = 'daemon';
 const SOCKET_REQUEST_TIMEOUT_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 500;
 const CHILD_SOCKET_FILE_NAME = 'child.sock';
+const DEFAULT_IDLE_TIMEOUT_NO_RUN_NO_RESOURCES_MS = 5 * 60 * 1000;
+const DEFAULT_IDLE_TIMEOUT_NO_RUN_WITH_RESOURCES_MS = 60 * 60 * 1000;
+const DEFAULT_IDLE_TIMEOUT_RUNNING_NO_RESOURCES_MS = 3 * 60 * 60 * 1000;
+const DEFAULT_IDLE_CHECK_INTERVAL_MS = 30 * 1000;
+
+type IdleState =
+  | 'no-run-no-resources'
+  | 'no-run-with-resources'
+  | 'running-no-resources'
+  | 'running-with-resources';
+
+function parseDurationMsEnv(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
 
 type DaemonRequest = {
   action?: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop' | 'tool';
@@ -137,6 +161,22 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
   };
   let childDaemonProcess: ChildProcess | null = null;
   const childSocketPath = path.join(path.dirname(socketPath), CHILD_SOCKET_FILE_NAME);
+  const idleTimeoutNoRunNoResourcesMs = parseDurationMsEnv(
+    'SHELL_SERVER_IDLE_TIMEOUT_NO_RUN_NO_RESOURCES_MS',
+    DEFAULT_IDLE_TIMEOUT_NO_RUN_NO_RESOURCES_MS
+  );
+  const idleTimeoutNoRunWithResourcesMs = parseDurationMsEnv(
+    'SHELL_SERVER_IDLE_TIMEOUT_NO_RUN_WITH_RESOURCES_MS',
+    DEFAULT_IDLE_TIMEOUT_NO_RUN_WITH_RESOURCES_MS
+  );
+  const idleTimeoutRunningNoResourcesMs = parseDurationMsEnv(
+    'SHELL_SERVER_IDLE_TIMEOUT_RUNNING_NO_RESOURCES_MS',
+    DEFAULT_IDLE_TIMEOUT_RUNNING_NO_RESOURCES_MS
+  );
+  const idleCheckIntervalMs = parseDurationMsEnv(
+    'SHELL_SERVER_IDLE_CHECK_INTERVAL_MS',
+    DEFAULT_IDLE_CHECK_INTERVAL_MS
+  );
 
   const resolveChildDaemonEntry = (): string => {
     const override = process.env['SHELL_SERVER_CHILD_DAEMON_ENTRY'];
@@ -215,6 +255,60 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
   };
   let attachSocket: net.Socket | null = null;
   let pongResolver: ((result: boolean) => void) | null = null;
+  let shuttingDown = false;
+  let idleCheckTimer: NodeJS.Timeout | null = null;
+
+  const getIdleState = (): {
+    state: IdleState;
+    timeoutMs: number | null;
+    runningCount: number;
+    hasSubscribedResources: boolean;
+    subscribedResourceCount: number;
+  } => {
+    const runningCount = toolRuntime.processManager.listExecutions({ status: 'running' }).total;
+    const subscribedTerminalCount = toolRuntime.terminalManager.getSubscribedTerminalCount();
+    const subscribedFileCount = toolRuntime.fileManager.getSubscribedFileCount();
+    const subscribedResourceCount = subscribedTerminalCount + subscribedFileCount;
+    const hasSubscribedResources = subscribedResourceCount > 0;
+
+    if (runningCount === 0 && !hasSubscribedResources) {
+      return {
+        state: 'no-run-no-resources',
+        timeoutMs: idleTimeoutNoRunNoResourcesMs,
+        runningCount,
+        hasSubscribedResources,
+        subscribedResourceCount,
+      };
+    }
+
+    if (runningCount === 0 && hasSubscribedResources) {
+      return {
+        state: 'no-run-with-resources',
+        timeoutMs: idleTimeoutNoRunWithResourcesMs,
+        runningCount,
+        hasSubscribedResources,
+        subscribedResourceCount,
+      };
+    }
+
+    if (runningCount > 0 && !hasSubscribedResources) {
+      return {
+        state: 'running-no-resources',
+        timeoutMs: idleTimeoutRunningNoResourcesMs,
+        runningCount,
+        hasSubscribedResources,
+        subscribedResourceCount,
+      };
+    }
+
+    return {
+      state: 'running-with-resources',
+      timeoutMs: idleTimeoutRunningNoResourcesMs,
+      runningCount,
+      hasSubscribedResources,
+      subscribedResourceCount,
+    };
+  };
 
   const markDetached = () => {
     state.attached = false;
@@ -433,15 +527,8 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
       }
       if (action === 'stop') {
         sendResponse(socket, { ok: true });
-        if (childDaemonProcess?.pid) {
-          try {
-            process.kill(childDaemonProcess.pid);
-          } catch {
-            // Best-effort shutdown only.
-          }
-        }
-        await shutdown();
-        process.exit(0);
+        await handleShutdown('stop', 0);
+        return;
       }
 
       if (action === 'tool') {
@@ -502,6 +589,19 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
   logger.info('Daemon socket ready', { socketPath, cwd, branch }, DAEMON_COMPONENT);
 
   const shutdown = async () => {
+    if (idleCheckTimer) {
+      clearInterval(idleCheckTimer);
+      idleCheckTimer = null;
+    }
+
+    if (childDaemonProcess?.pid) {
+      try {
+        process.kill(childDaemonProcess.pid);
+      } catch {
+        // Best-effort shutdown only.
+      }
+    }
+
     closeAttachSocket();
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
@@ -510,37 +610,76 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
     await cleanupSocket(socketPath);
   };
 
-  let shuttingDown = false;
-  const handleSignal = (signal: NodeJS.Signals) => {
+  const handleShutdown = async (reason: string, exitCode: number): Promise<void> => {
     if (shuttingDown) {
       return;
     }
     shuttingDown = true;
 
     const forceExitTimer = setTimeout(() => {
-      logger.error('Daemon forced exit on shutdown timeout', { signal }, DAEMON_COMPONENT);
+      logger.error('Daemon forced exit on shutdown timeout', { reason }, DAEMON_COMPONENT);
       process.exit(1);
     }, 5000);
     forceExitTimer.unref?.();
 
-    shutdown()
-      .then(() => {
-        process.exit(0);
-      })
-      .catch((error) => {
-        logger.error('Daemon shutdown failed', { error: String(error), signal }, DAEMON_COMPONENT);
-        process.exit(1);
-      })
-      .finally(() => {
-        clearTimeout(forceExitTimer);
-      });
+    try {
+      await shutdown();
+      process.exit(exitCode);
+    } catch (error) {
+      logger.error('Daemon shutdown failed', { error: String(error), reason }, DAEMON_COMPONENT);
+      process.exit(1);
+    } finally {
+      clearTimeout(forceExitTimer);
+    }
   };
 
+  let idleState = getIdleState();
+  let idleStateSince = Date.now();
+
+  idleCheckTimer = setInterval(() => {
+    if (shuttingDown) {
+      return;
+    }
+
+    const nextIdleState = getIdleState();
+    if (nextIdleState.state !== idleState.state) {
+      idleState = nextIdleState;
+      idleStateSince = Date.now();
+      return;
+    }
+
+    const timeoutMs = nextIdleState.timeoutMs;
+    if (!timeoutMs) {
+      return;
+    }
+
+    const elapsedMs = Date.now() - idleStateSince;
+    if (elapsedMs < timeoutMs) {
+      return;
+    }
+
+    logger.info(
+      'Daemon idle timeout reached; shutting down',
+      {
+        state: nextIdleState.state,
+        elapsedMs,
+        timeoutMs,
+        runningCount: nextIdleState.runningCount,
+        hasSubscribedResources: nextIdleState.hasSubscribedResources,
+        subscribedResourceCount: nextIdleState.subscribedResourceCount,
+      },
+      DAEMON_COMPONENT
+    );
+
+    void handleShutdown(`idle-timeout:${nextIdleState.state}`, 0);
+  }, idleCheckIntervalMs);
+  idleCheckTimer.unref?.();
+
   process.on('SIGTERM', () => {
-    handleSignal('SIGTERM');
+    void handleShutdown('SIGTERM', 0);
   });
   process.on('SIGINT', () => {
-    handleSignal('SIGINT');
+    void handleShutdown('SIGINT', 0);
   });
 }
 
