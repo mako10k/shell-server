@@ -576,6 +576,35 @@ export function createMessageCallbackFromMCPServer(server: Server): CreateMessag
       // Call MCP createMessage method with type assertion
       const result = await server.createMessage(mcpRequest as Parameters<typeof server.createMessage>[0]);
 
+      const responseText = (() => {
+        const content = result.content;
+
+        if (Array.isArray(content)) {
+          const textPart = content.find(
+            (part): part is { type: 'text'; text: string } =>
+              typeof part === 'object' &&
+              part !== null &&
+              'type' in part &&
+              part.type === 'text' &&
+              'text' in part,
+          );
+
+          return textPart?.text ?? '';
+        }
+
+        if (
+          typeof content === 'object' &&
+          content !== null &&
+          'type' in content &&
+          content.type === 'text' &&
+          'text' in content
+        ) {
+          return String(content.text ?? '');
+        }
+
+        return '';
+      })();
+
       // Build response object conditionally
       const response: {
         content: { type: 'text'; text: string; };
@@ -587,7 +616,7 @@ export function createMessageCallbackFromMCPServer(server: Server): CreateMessag
           function: { name: string; arguments: string; };
         }>;
       } = {
-        content: { type: 'text', text: String(result.content?.text || '') },
+        content: { type: 'text', text: responseText },
       };
 
       if (result.model) {
