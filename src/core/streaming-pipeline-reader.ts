@@ -148,10 +148,10 @@ export class StreamingPipelineReader extends Readable {
 
           // Identify the last sequence number saved to the file
           if (streamState) {
-            // 最新のバッファから最後に保存されたシーケンス番号を推定
+            // Estimate the last saved sequence number from the latest buffers
             const latestBuffers = this.realtimeSubscriber.getLatestBuffers(this.executionId, 10);
             if (latestBuffers.length > 0) {
-              // ファイルサイズと比較して、どこまでがFile保存済みかを推定
+              // Estimate how far data has been persisted by comparing against file size
               this.lastSequenceNumber = this.estimateLastFileSequence(latestBuffers);
             }
           }
@@ -179,7 +179,7 @@ export class StreamingPipelineReader extends Readable {
     const newBuffers = this.realtimeSubscriber.getBuffersFromSequence(
       this.executionId,
       this.lastSequenceNumber + 1,
-      50 // 一度に最大50バッファ
+      50 // Max 50 buffers at a time
     );
 
     if (newBuffers.length > 0) {
@@ -206,8 +206,8 @@ export class StreamingPipelineReader extends Readable {
   private estimateLastFileSequence(
     latestBuffers: Array<{ data: string; sequenceNumber: number }>
   ): number {
-    // 簡単な推定: ファイルサイズからバッファサイズを逆算
-    // より正確な実装では、FileStorageSubscriberとの連携が必要
+    // Simple estimate: infer from file size and buffer sizes
+    // A more accurate implementation would integrate with FileStorageSubscriber
     let estimatedBytes = 0;
     for (let i = latestBuffers.length - 1; i >= 0; i--) {
       const buffer = latestBuffers[i];

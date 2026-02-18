@@ -135,7 +135,7 @@ export class SecurityManager {
       configured_at: getCurrentTimestamp(),
     };
 
-    // customモードの場合のみ、詳細設定を適用
+    // Apply detailed settings only in custom mode
     if (newRestrictions.security_mode === 'custom') {
       if (restrictions.allowed_commands) {
         newRestrictions.allowed_commands = restrictions.allowed_commands;

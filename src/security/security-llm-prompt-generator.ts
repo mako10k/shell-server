@@ -413,7 +413,7 @@ Return function execution result as JSON only.`;
   }
 
   /**
-   * Safety Levelに基づくプロンプト調整
+   * Adjust prompt based on Safety Level
    */
   adjustPromptForSafetyLevel(
     basePrompt: { systemPrompt: string; userMessage: string },

@@ -1188,7 +1188,7 @@ export class EnhancedSafetyEvaluator {
     }
 
     // Use specific question from LLM if provided, otherwise use default message
-    // コマンド部分をshellコードブロックで囲む
+    // Wrap the command section in a shell code block
     const shellBlock = `\`\`\`shell\n${command}\n\`\`\``;
     const elicitationMessage = userIntentQuestion 
       ? `🔐 SECURITY CONFIRMATION REQUIRED\n\nCommand:\n${shellBlock}\n\n${userIntentQuestion}`
@@ -1346,7 +1346,7 @@ export class EnhancedSafetyEvaluator {
         );
       
       case 'ai_assistant_confirm':
-        // next_actionが提供されていることを確認
+        // Ensure next_action is provided
         if (!llmResult.next_action) {
           throw new Error('next_action is required for ai_assistant_confirm results');
         }
@@ -1363,7 +1363,7 @@ export class EnhancedSafetyEvaluator {
       
       case 'user_confirm':
       case 'add_more_history':
-        // これらは最終応答ではないため、内部処理でこれらが返される場合はエラー
+        // These are not final responses; treat as an internal-processing error if returned
         throw new Error(`${llmResult.evaluation_result} results are not supported in final responses. These should be handled internally.`);
       
       default:

@@ -125,7 +125,7 @@ export class TerminalManager {
     );
 
     try {
-      // PTYプロセスの作成
+      // Create PTY process
       const ptyModule = await loadPty();
       const ptyProcess = ptyModule.spawn(shellCommand.command, shellCommand.args, {
         name: 'xterm-256color',
@@ -135,7 +135,7 @@ export class TerminalManager {
         env,
       });
 
-      // ターミナル情報の作成
+      // Create terminal info
       const terminalInfo: TerminalInfo = {
         terminal_id: terminalId,
         session_name: options.sessionName || `terminal-${terminalId.slice(0, 8)}`,
@@ -152,7 +152,7 @@ export class TerminalManager {
         },
       };
 
-      // ターミナルセッションの初期化
+      // Initialize terminal session
       const session: TerminalSession = {
         info: terminalInfo,
         ptyProcess,
@@ -161,12 +161,12 @@ export class TerminalManager {
         lastActivity: new Date(),
       };
 
-      // 出力の処理
+      // Handle output
       ptyProcess.onData((data) => {
         this.handleOutput(terminalId, data);
       });
 
-      // プロセス終了の処理
+      // Handle process exit
       ptyProcess.onExit((exitCode) => {
         this.handleTerminalExit(terminalId, exitCode);
       });
@@ -379,12 +379,12 @@ export class TerminalManager {
   }
 
   /**
-   * 制御コードのエスケープシーケンスを解釈する
+   * Interpret escape sequences for control codes
    */
   private parseControlCodes(input: string): string {
     return (
       input
-        // 一般的な制御文字
+        // Common control characters
         .replace(/\\n/g, '\n')
         .replace(/\\r/g, '\r')
         .replace(/\\t/g, '\t')
@@ -392,7 +392,7 @@ export class TerminalManager {
         .replace(/\\f/g, '\f')
         .replace(/\\v/g, '\v')
         .replace(/\\0/g, '\0')
-        // Ctrl+文字のシーケンス (^C = Ctrl+C)
+        // Ctrl+letter sequences (^C = Ctrl+C)
         .replace(/\^([A-Z@\[\]\\^_])/g, (_, char) => {
           const code = char.charCodeAt(0);
           if (code >= 64 && code <= 95) {
@@ -401,19 +401,19 @@ export class TerminalManager {
           }
           return `^${char}`;
         })
-        // 16進数エスケープ (\x1b)
+        // Hex escape (\x1b)
         .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => {
           return String.fromCharCode(parseInt(hex, 16));
         })
-        // 8進数エスケープ (\033)
+        // Octal escape (\033)
         .replace(/\\([0-7]{3})/g, (_, octal) => {
           return String.fromCharCode(parseInt(octal, 8));
         })
-        // Unicode エスケープ (\u001b)
+        // Unicode escape (\u001b)
         .replace(/\\u([0-9a-fA-F]{4})/g, (_, unicode) => {
           return String.fromCharCode(parseInt(unicode, 16));
         })
-        // エスケープされたバックスラッシュ
+        // Escaped backslash
         .replace(/\\\\/g, '\\')
     );
   }
@@ -438,11 +438,11 @@ export class TerminalManager {
       throw new ResourceNotFoundError('terminal', terminalId);
     }
 
-    // startLineが指定されていない場合は、前回の読み取り位置を使用
+    // If startLine is not specified, use the previous read position
     const actualStartLine =
       startLine !== undefined ? startLine : this.terminalReadPositions.get(terminalId) || 0;
 
-    // フォアグラウンドプロセス情報を更新（要求された場合）
+    // Update foreground process info (if requested)
     if (includeForegroundProcess) {
       await this.updateForegroundProcess(session);
     }
@@ -453,12 +453,12 @@ export class TerminalManager {
 
     let output = outputLines.join('\n');
 
-    // ANSI制御コードの除去（オプション）
+    // Remove ANSI control codes (optional)
     if (!includeAnsi) {
       output = this.stripAnsiCodes(output);
     }
 
-    // 次回の読み取り位置を更新
+    // Update read position for next call
     const nextStartLine = endLine;
     this.terminalReadPositions.set(terminalId, nextStartLine);
 
@@ -479,7 +479,7 @@ export class TerminalManager {
   }
 
   private stripAnsiCodes(text: string): string {
-    // ANSI制御コードを除去する正規表現
+    // Regex to remove ANSI control codes
     return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
   }
 
@@ -564,10 +564,10 @@ export class TerminalManager {
     }
 
     try {
-      // PTYのサイズを変更
+      // Resize PTY
       session.ptyProcess.resize(dimensions.width, dimensions.height);
 
-      // 情報を更新
+      // Update info
       session.info.dimensions = dimensions;
       session.info.last_activity = getCurrentTimestamp();
 
@@ -596,20 +596,20 @@ export class TerminalManager {
     const closedAt = getCurrentTimestamp();
 
     try {
-      // PTYプロセスを終了
+      // Terminate PTY process
       session.ptyProcess.kill();
 
-      // セッション情報を更新
+      // Update session info
       session.info.status = 'closed';
       session.info.last_activity = closedAt;
 
-      // 履歴保存の処理（今後実装）
+      // Handle history save (to be implemented)
       const historySaved = saveHistory && session.history.length > 0;
 
-      // セッションをマップから削除
+      // Remove session from map
       this.terminals.delete(terminalId);
 
-      // 読み取り位置もクリーンアップ
+      // Also clean up read position
       this.terminalReadPositions.delete(terminalId);
 
       return {
@@ -622,10 +622,10 @@ export class TerminalManager {
     }
   }
 
-  // アイドル状態のターミナルの検出
+  // Detect terminals in idle state
   getIdleTerminals(idleMinutes = 30): string[] {
     const now = new Date();
-    const idleThreshold = idleMinutes * 60 * 1000; // ミリ秒に変換
+    const idleThreshold = idleMinutes * 60 * 1000; // convert to milliseconds
 
     const idleTerminals: string[] = [];
 
@@ -643,12 +643,12 @@ export class TerminalManager {
   }
 
   cleanup(): void {
-    // 全てのターミナルを閉じる
+    // Close all terminals
     for (const [terminalId] of this.terminals) {
       try {
         this.closeTerminal(terminalId, false);
       } catch (error) {
-        // エラーログを内部ログに記録（標準出力を避ける）
+        // Record errors in internal logs (avoid stdout)
         // console.error(`Failed to cleanup terminal ${terminalId}:`, error);
       }
     }
@@ -657,11 +657,11 @@ export class TerminalManager {
   }
 
   /**
-   * フォアグラウンドプロセス情報を更新する
+  * Update foreground process information
    */
   private async updateForegroundProcess(session: TerminalSession): Promise<void> {
     try {
-      // キャッシュチェック（5秒間有効）
+    // Cache check (valid for 5 seconds)
       const now = Date.now();
       if (session.foregroundProcessCache && now - session.foregroundProcessCache.timestamp < 5000) {
         session.info.foreground_process = session.foregroundProcessCache.info;
@@ -670,7 +670,7 @@ export class TerminalManager {
 
       const foregroundInfo = await ProcessUtils.getForegroundProcess(session.ptyProcess);
 
-      // キャッシュを更新
+      // Update cache
       session.foregroundProcessCache = {
         info: foregroundInfo,
         timestamp: now,
@@ -686,11 +686,11 @@ export class TerminalManager {
   }
 
   /**
-   * プログラムガードをチェックする
+   * Check program guard
    */
   private async checkProgramGuard(terminalId: string, sendTo: string): Promise<boolean> {
     if (sendTo === '*') {
-      return true; // 条件なし
+      return true; // no condition
     }
 
     const session = this.terminals.get(terminalId);
@@ -698,12 +698,12 @@ export class TerminalManager {
       return false;
     }
 
-    // フォアグラウンドプロセス情報を更新
+    // Update foreground process info
     await this.updateForegroundProcess(session);
 
     const foregroundProcess = session.info.foreground_process;
     if (!foregroundProcess?.available || !foregroundProcess.process) {
-      return false; // フォアグラウンドプロセスが取得できない場合は拒否
+      return false; // reject when foreground process info cannot be obtained
     }
 
     return ProcessUtils.checkProgramGuard(foregroundProcess.process, sendTo);

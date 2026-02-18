@@ -413,10 +413,10 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest) {
   // (1) Filter messages and extract SystemMessage
   const systemMessages = request.messages.filter(msg => msg.role === 'system');
   const filteredMessages: Array<{ role: 'user' | 'assistant', content: { type: 'text', text: string } }> = request.messages
-    .filter(msg => msg.role !== 'system') // 'system' を除外
+    .filter(msg => msg.role !== 'system') // exclude 'system'
     .map(msg => ({
-      role: msg.role as 'user' | 'assistant', // 明示的に型をキャスト
-      content: { type: 'text', text: msg.content } // type を "text" に固定
+      role: msg.role as 'user' | 'assistant', // explicit type cast
+      content: { type: 'text', text: msg.content } // fix type to "text"
     }));
 
   // Convert tool_choice to string for system prompt generation

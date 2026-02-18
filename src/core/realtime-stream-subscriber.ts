@@ -270,7 +270,7 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
   }
 
   /**
-   * リソースをクリーンアップして終了
+   * Clean up resources and terminate
    */
   destroy(): void {
     if (this.cleanupInterval) {

@@ -593,7 +593,7 @@ export class BackofficeServer {
         return;
       }
 
-      // Web ReadableStream を逐次読み取りして下流に書き出す
+      // Read from Web ReadableStream incrementally and write downstream
       const reader = (resp.body as ReadableStream<Uint8Array>).getReader();
       let closed = false;
       const pump = async () => {
