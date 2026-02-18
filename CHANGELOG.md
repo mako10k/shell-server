@@ -22,6 +22,13 @@ All notable changes to this project are documented in this file.
 ### Notes
 - リリース時の補足（移行手順、既知の制約など）
 
+## [0.2.1] - 2026-02-18
+
+### Fixed
+- `shell-server` エントリーポイントに shebang を追加し、`npm link` / グローバル実行時にシェル解釈される不具合を修正。
+- daemon の `SIGINT` / `SIGTERM` ハンドリングを強化し、シャットダウン完了後に確実にプロセス終了するよう修正。
+- `MonitoringManager` のシステム監視タイマーを `cleanup()` で停止し、イベントループ残留で終了できない不具合を修正。
+
 ## [0.2.0] - 2026-02-17
 
 ### Changed

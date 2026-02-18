@@ -15,6 +15,7 @@ export class MonitoringManager {
   private monitors = new Map<string, MonitorInfo>();
   private intervals = new Map<string, NodeJS.Timeout>();
   private processMetrics = new Map<number, ProcessMetrics[]>();
+  private systemMonitoringInterval: NodeJS.Timeout | null = null;
   private readonly maxMetricsHistory = 1000;
 
   constructor() {
@@ -313,7 +314,7 @@ export class MonitoringManager {
 
   private startSystemMonitoring(): void {
     // 5分ごとにシステム統計を収集
-    setInterval(
+    this.systemMonitoringInterval = setInterval(
       () => {
         try {
           // 将来的にはシステム統計をログファイルに保存
@@ -326,6 +327,9 @@ export class MonitoringManager {
       },
       5 * 60 * 1000
     );
+
+    // 終了処理を阻害しないようにする
+    this.systemMonitoringInterval.unref?.();
   }
 
   private logSystemStats(_stats: SystemStats): void {
@@ -338,6 +342,11 @@ export class MonitoringManager {
   }
 
   cleanup(): void {
+    if (this.systemMonitoringInterval) {
+      clearInterval(this.systemMonitoringInterval);
+      this.systemMonitoringInterval = null;
+    }
+
     // 全ての監視を停止
     for (const monitorId of this.monitors.keys()) {
       try {

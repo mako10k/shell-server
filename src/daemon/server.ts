@@ -502,6 +502,7 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
   logger.info('Daemon socket ready', { socketPath, cwd, branch }, DAEMON_COMPONENT);
 
   const shutdown = async () => {
+    closeAttachSocket();
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
     });
@@ -509,15 +510,37 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
     await cleanupSocket(socketPath);
   };
 
+  let shuttingDown = false;
+  const handleSignal = (signal: NodeJS.Signals) => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+
+    const forceExitTimer = setTimeout(() => {
+      logger.error('Daemon forced exit on shutdown timeout', { signal }, DAEMON_COMPONENT);
+      process.exit(1);
+    }, 5000);
+    forceExitTimer.unref?.();
+
+    shutdown()
+      .then(() => {
+        process.exit(0);
+      })
+      .catch((error) => {
+        logger.error('Daemon shutdown failed', { error: String(error), signal }, DAEMON_COMPONENT);
+        process.exit(1);
+      })
+      .finally(() => {
+        clearTimeout(forceExitTimer);
+      });
+  };
+
   process.on('SIGTERM', () => {
-    shutdown().catch((error) => {
-      logger.error('Daemon shutdown failed', { error: String(error) }, DAEMON_COMPONENT);
-    });
+    handleSignal('SIGTERM');
   });
   process.on('SIGINT', () => {
-    shutdown().catch((error) => {
-      logger.error('Daemon shutdown failed', { error: String(error) }, DAEMON_COMPONENT);
-    });
+    handleSignal('SIGINT');
   });
 }
 
