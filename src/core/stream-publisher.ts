@@ -1,38 +1,38 @@
 /**
- * Issue #13: リアルタイムストリーミング機能
- * Phase 1: StreamPublisher + Subscriber パターン実装
+ * Issue #13: Real-time streaming feature
+ * Phase 1: StreamPublisher + Subscriber pattern implementation
  */
 
 export interface StreamSubscriber {
   /** Subscriber ID */
   id: string;
 
-  /** プロセス開始時に呼ばれる */
+  /** Called when a process starts */
   onProcessStart?(executionId: string, command: string): void | Promise<void>;
 
-  /** 新しい出力データが来た時に呼ばれる */
+  /** Called when new output data arrives */
   onOutputData(executionId: string, data: string, isStderr: boolean): void | Promise<void>;
 
-  /** プロセス終了時に呼ばれる */
+  /** Called when a process ends */
   onProcessEnd?(executionId: string, exitCode: number | null): void | Promise<void>;
 
-  /** エラー発生時に呼ばれる */
+  /** Called when an error occurs */
   onError?(executionId: string, error: Error): void | Promise<void>;
 }
 
 interface StreamPublisherOptions {
-  /** リアルタイム通知を有効にするか */
+  /** Whether to enable real-time notifications */
   enableRealtimeStreaming?: boolean;
 
-  /** バッファサイズ（バイト） */
+  /** Buffer size in bytes */
   bufferSize?: number;
 
-  /** 通知間隔（ミリ秒） */
+  /** Notification interval in milliseconds */
   notificationInterval?: number;
 }
 
 /**
- * プロセス出力のPUB/SUBを管理するクラス
+ * Class that manages PUB/SUB for process output
  */
 export class StreamPublisher {
   private subscribers: Map<string, StreamSubscriber> = new Map();
@@ -48,18 +48,18 @@ export class StreamPublisher {
   }
 
   /**
-   * Subscriberを登録
+   * Register a subscriber
    */
   subscribe(subscriber: StreamSubscriber): void {
     this.subscribers.set(subscriber.id, subscriber);
   }
 
   /**
-   * Subscriberを削除
+   * Remove a subscriber
    */
   unsubscribe(subscriberId: string): void {
     this.subscribers.delete(subscriberId);
-    // 全ての実行からこのsubscriberを削除
+    // Remove this subscriber from all executions
     for (const [executionId, subscriberIds] of this.executionSubscribers.entries()) {
       subscriberIds.delete(subscriberId);
       if (subscriberIds.size === 0) {
@@ -69,7 +69,7 @@ export class StreamPublisher {
   }
 
   /**
-   * 特定の実行にSubscriberを追加
+    * Add a subscriber to a specific execution
    */
   subscribeToExecution(executionId: string, subscriberId: string): void {
     if (!this.subscribers.has(subscriberId)) {
@@ -87,7 +87,7 @@ export class StreamPublisher {
   }
 
   /**
-   * 購読者に通知を送信する共通ヘルパー
+    * Common helper for sending notifications to subscribers
    */
   private async notifySubscribers<T extends unknown[]>(
     executionId: string,
@@ -116,7 +116,7 @@ export class StreamPublisher {
   }
 
   /**
-   * プロセス開始を通知
+    * Notify process start
    */
   async notifyProcessStart(executionId: string, command: string): Promise<void> {
     await this.notifySubscribers(
@@ -132,7 +132,7 @@ export class StreamPublisher {
   }
 
   /**
-   * 出力データを通知
+    * Notify output data
    */
   async notifyOutputData(
     executionId: string,
@@ -150,7 +150,7 @@ export class StreamPublisher {
   }
 
   /**
-   * プロセス終了を通知
+    * Notify process end
    */
   async notifyProcessEnd(executionId: string, exitCode: number | null): Promise<void> {
     await this.notifySubscribers(
@@ -164,12 +164,12 @@ export class StreamPublisher {
       exitCode
     );
 
-    // 実行完了後はsubscription情報をクリーンアップ
+    // Clean up subscription data after execution completes
     this.executionSubscribers.delete(executionId);
   }
 
   /**
-   * エラーを通知
+   * Notify errors
    */
   async notifyError(executionId: string, error: Error): Promise<void> {
     await this.notifySubscribers(
@@ -185,14 +185,14 @@ export class StreamPublisher {
   }
 
   /**
-   * リアルタイムストリーミングが有効かどうか
+   * Whether real-time streaming is enabled
    */
   isRealtimeStreamingEnabled(): boolean {
     return this.options.enableRealtimeStreaming === true;
   }
 
   /**
-   * 特定の実行にSubscriberが登録されているかチェック
+   * Check whether subscribers are registered for a specific execution
    */
   hasSubscribers(executionId: string): boolean {
     const subscriberIds = this.executionSubscribers.get(executionId);
