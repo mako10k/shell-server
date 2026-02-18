@@ -5,62 +5,62 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
-- CLI / daemon / runtime / tool で追加した機能
+- Features added in CLI / daemon / runtime / tools
 
 ### Changed
-- 既存挙動の変更（互換性に影響する場合は明記）
+- Changes to existing behavior (explicitly note compatibility impact when applicable)
 
 ### Fixed
-- 不具合修正（再現条件や影響範囲を短く記載）
+- Bug fixes (briefly note reproduction conditions and impact scope)
 
 ### Security
-- セキュリティ関連の修正・評価ルール更新
+- Security-related fixes and evaluation rule updates
 
 ### Dependencies
-- 主要依存関係の更新（理由があれば記載）
+- Major dependency updates (include rationale when applicable)
 
 ### Notes
-- リリース時の補足（移行手順、既知の制約など）
+- Release notes and supplements (migration steps, known limitations, etc.)
 
 ## [0.2.3] - 2026-02-18
 
 ### Fixed
-- `createMessageCallbackFromMCPServer` で MCP SDK のレスポンス `content` が配列/非テキストを含む union 型でも安全にテキスト抽出できるよう修正し、`prepublishOnly` ビルドエラーを解消。
+- Fixed `createMessageCallbackFromMCPServer` so text is safely extracted from MCP SDK response `content` even when it is a union including arrays/non-text values, resolving the `prepublishOnly` build error.
 
 ### Security
-- `npm audit` で検出された脆弱性（high/moderate）を解消。
+- Resolved vulnerabilities (high/moderate) detected by `npm audit`.
 
 ### Dependencies
-- `@modelcontextprotocol/sdk` を `^1.26.0` へ更新し、関連依存 (`ajv` など) を脆弱性修正版へ追随。
+- Updated `@modelcontextprotocol/sdk` to `^1.26.0` and aligned related dependencies (`ajv`, etc.) to vulnerability-fixed versions.
 
 ## [0.2.2] - 2026-02-18
 
 ### Fixed
-- `shell-server-cli` が daemon ソケット未起動時に自動起動して再接続するフォールバックを追加。
-- daemon のアイドル停止判定を「購読済みリソース」基準へ変更し、ファイル購読フラグおよびターミナルページング位置を反映。
-- 実行中かつ購読済みリソースありのケースを、実行中かつ購読済みリソースなしと同じタイムアウト（既定3時間）で停止するよう統一。
+- Added fallback behavior so `shell-server-cli` auto-starts and reconnects when the daemon socket is not running.
+- Changed daemon idle-shutdown criteria to use “subscribed resources,” reflecting file subscription flags and terminal paging position.
+- Unified timeout behavior so running processes with subscribed resources use the same timeout (default 3 hours) as running processes without subscribed resources.
 
 ## [0.2.1] - 2026-02-18
 
 ### Fixed
-- `shell-server` エントリーポイントに shebang を追加し、`npm link` / グローバル実行時にシェル解釈される不具合を修正。
-- daemon の `SIGINT` / `SIGTERM` ハンドリングを強化し、シャットダウン完了後に確実にプロセス終了するよう修正。
-- `MonitoringManager` のシステム監視タイマーを `cleanup()` で停止し、イベントループ残留で終了できない不具合を修正。
+- Added a shebang to the `shell-server` entry point, fixing shell-interpretation issues during `npm link` / global execution.
+- Strengthened daemon `SIGINT` / `SIGTERM` handling to ensure reliable process termination after shutdown completion.
+- Stopped `MonitoringManager` system monitoring timers in `cleanup()`, fixing exit failures caused by event-loop residue.
 
 ## [0.2.0] - 2026-02-17
 
 ### Changed
-- **Breaking:** daemon / CLI / server-manager / security / process-manager の環境変数プレフィックスを `MCP_SHELL_*` から `SHELL_SERVER_*` へ統一。
-- **Breaking:** daemon の子ソケット名を `mcp.sock` から `child.sock` に変更。
-- **Breaking:** daemon `info` 応答および `ServerInfo` で返す子ソケット項目を `mcpSocketPath` から `childSocketPath` に変更。
-- **Breaking:** runtime export のエラー名を `MCPShellError` から `ShellServerError` に変更（`@mako10k/shell-server/tool-runtime` 経由の参照名が変更）。
+- **Breaking:** Unified environment variable prefixes across daemon / CLI / server-manager / security / process-manager from `MCP_SHELL_*` to `SHELL_SERVER_*`.
+- **Breaking:** Renamed daemon child socket from `mcp.sock` to `child.sock`.
+- **Breaking:** Renamed child socket field in daemon `info` response and `ServerInfo` from `mcpSocketPath` to `childSocketPath`.
+- **Breaking:** Renamed runtime export error from `MCPShellError` to `ShellServerError` (reference name changed via `@mako10k/shell-server/tool-runtime`).
 
 ### Fixed
-- `mcp-shell` 経由起動時に `daemon.sock` のみ作成されて `mcp.sock` が作成されない経路を修正し、子 daemon エントリ解決を強化。
+- Fixed a startup path where only `daemon.sock` was created (without `mcp.sock`) when launched via `mcp-shell`, and strengthened child daemon entry resolution.
 
 ### Notes
-- 互換性維持のための旧環境変数 fallback は **非対応**（意図的な破壊的変更）。
-- 旧設定を使用している場合は、以下を新名称へ置換してください。
+- Legacy environment-variable fallback for backward compatibility is **not supported** (intentional breaking change).
+- If you are using legacy settings, replace with the new names below.
 	- `MCP_SHELL_DAEMON_SOCKET` -> `SHELL_SERVER_DAEMON_SOCKET`
 	- `MCP_SHELL_DAEMON_CWD` -> `SHELL_SERVER_DAEMON_CWD`
 	- `MCP_SHELL_DAEMON_BRANCH` -> `SHELL_SERVER_DAEMON_BRANCH`
@@ -89,7 +89,7 @@ All notable changes to this project are documented in this file.
 ## [0.1.1] - 2026-02-17
 
 ### Added
-- `npm run changelog:release -- <version>` で `[Unreleased]` から次バージョン見出しを生成できる補助スクリプトを追加
+- Added a helper script: `npm run changelog:release -- <version>` to generate the next version heading from `[Unreleased]`.
 
 ## [0.1.0] - 2026-02-17
 
