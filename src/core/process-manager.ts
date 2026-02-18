@@ -48,7 +48,7 @@ export interface ExecutionOptions {
   returnPartialOnTimeout?: boolean;
 }
 
-// バックグラウンドプロセス終了時のコールバック型
+// Callback type for background process completion
 interface BackgroundProcessCallback {
   onComplete?: (executionId: string, executionInfo: ExecutionInfo) => void | Promise<void>;
   onError?: (
@@ -64,13 +64,13 @@ export class ProcessManager {
   private processes = new Map<number, ChildProcess>();
   private readonly maxConcurrentProcesses: number;
   private readonly outputDir: string;
-  private terminalManager?: TerminalManager; // TerminalManager への参照
-  private fileManager: FileManager | undefined; // FileManager への参照
+  private terminalManager?: TerminalManager; // Reference to TerminalManager
+  private fileManager: FileManager | undefined; // Reference to FileManager
   private defaultWorkingDirectory: string;
   private allowedWorkingDirectories: string[];
-  private backgroundProcessCallbacks: BackgroundProcessCallback = {}; // バックグラウンドプロセス終了コールバック
+  private backgroundProcessCallbacks: BackgroundProcessCallback = {}; // Background process completion callbacks
 
-  // Issue #13: PUB/SUB統合 - Feature Flag付きで段階的統合
+  // Issue #13: PUB/SUB integration - phased rollout with feature flag
   private streamPublisher: StreamPublisher;
   private fileStorageSubscriber: FileStorageSubscriber | undefined;
   private realtimeStreamSubscriber: RealtimeStreamSubscriber | undefined;
@@ -89,14 +89,14 @@ export class ProcessManager {
       ? process.env['SHELL_SERVER_ALLOWED_WORKDIRS'].split(',').map((dir) => dir.trim())
       : [process.cwd()];
 
-    // StreamPublisher初期化
+    // Initialize StreamPublisher
     this.streamPublisher = new StreamPublisher({
-      enableRealtimeStreaming: false, // 初期状態は無効
+      enableRealtimeStreaming: false, // disabled by default
       bufferSize: 8192,
       notificationInterval: 100,
     });
 
-    // 環境変数でStreaming機能を制御（段階的展開、デフォルト有効）
+    // Control streaming via environment variable (phased rollout, enabled by default)
     this.enableStreaming = process.env['SHELL_SERVER_ENABLE_STREAMING'] !== 'false';
 
     if (this.enableStreaming) {
@@ -105,38 +105,38 @@ export class ProcessManager {
     this.initializeOutputDirectory();
   }
 
-  // TerminalManager への参照を設定
+  // Set TerminalManager reference
   setTerminalManager(terminalManager: TerminalManager): void {
     this.terminalManager = terminalManager;
   }
 
-  // FileManager への参照を設定
+  // Set FileManager reference
   setFileManager(fileManager: FileManager): void {
     this.fileManager = fileManager;
 
-    // FileManagerが設定された時にStreaming機能を再初期化
+    // Reinitialize streaming when FileManager is set
     if (this.enableStreaming) {
       this.initializeStreamingComponents();
     }
   }
 
-  // バックグラウンドプロセス終了時のコールバックを設定
+  // Set callbacks for background process completion
   setBackgroundProcessCallbacks(callbacks: BackgroundProcessCallback): void {
     this.backgroundProcessCallbacks = callbacks;
   }
 
-  // Issue #13: Streaming コンポーネントの初期化
+  // Issue #13: Initialize streaming components
   private initializeStreamingComponents(): void {
     if (!this.fileManager) {
       console.error('ProcessManager: FileManager is required for streaming components');
       return;
     }
 
-    // FileStorageSubscriber初期化（既存FileManager機能を代替）
+    // Initialize FileStorageSubscriber (replacing part of existing FileManager handling)
     this.fileStorageSubscriber = new FileStorageSubscriber(this.fileManager, this.outputDir);
     this.streamPublisher.subscribe(this.fileStorageSubscriber);
 
-    // RealtimeStreamSubscriber初期化
+    // Initialize RealtimeStreamSubscriber
     this.realtimeStreamSubscriber = new RealtimeStreamSubscriber({
       bufferSize: 8192,
       notificationInterval: 100,
@@ -148,14 +148,14 @@ export class ProcessManager {
     console.error('ProcessManager: Streaming components initialized');
   }
 
-  // Issue #13: Streaming機能の有効/無効切り替え
+  // Issue #13: Enable/disable streaming
   enableStreamingFeature(enable: boolean = true): void {
     this.enableStreaming = enable;
 
     if (enable && this.fileManager) {
       this.initializeStreamingComponents();
     } else if (!enable) {
-      // Streaming無効化時のクリーンアップ
+      // Cleanup when streaming is disabled
       if (this.realtimeStreamSubscriber) {
         this.streamPublisher.unsubscribe(this.realtimeStreamSubscriber.id);
         this.realtimeStreamSubscriber.destroy();
@@ -169,13 +169,13 @@ export class ProcessManager {
     }
   }
 
-  // Issue #13: RealtimeStreamSubscriber への参照を取得（新しいMCPツール用）
+  // Issue #13: Get RealtimeStreamSubscriber reference (for new MCP tools)
   getRealtimeStreamSubscriber(): RealtimeStreamSubscriber | undefined {
     return this.realtimeStreamSubscriber;
   }
 
   /**
-   * Issue #13: output_idから実行IDを取得
+  * Issue #13: Get execution ID from output_id
    */
   private findExecutionIdByOutputId(outputId: string): string | undefined {
     return this.fileManager?.getExecutionIdByOutputId(outputId);
@@ -186,7 +186,7 @@ export class ProcessManager {
   }
 
   async executeCommand(options: ExecutionOptions): Promise<ExecutionInfo> {
-    // 同時実行数のチェック
+    // Check concurrent execution limit
     const runningProcesses = Array.from(this.executions.values()).filter(
       (exec) => exec.status === 'running'
     ).length;
@@ -195,7 +195,7 @@ export class ProcessManager {
       throw new ResourceLimitError('concurrent processes', this.maxConcurrentProcesses);
     }
 
-    // 入力データの準備 - input_output_idが指定された場合の処理
+    // Prepare input data when input_output_id is specified
     let resolvedInputData: string | undefined = options.inputData;
     let inputStream: StreamingPipelineReader | undefined = undefined;
 
@@ -206,11 +206,11 @@ export class ProcessManager {
         });
       }
 
-      // output_idから実行IDを特定
+      // Identify execution ID from output_id
       const sourceExecutionId = this.findExecutionIdByOutputId(options.inputOutputId);
 
       if (sourceExecutionId && this.realtimeStreamSubscriber) {
-        // 実行中プロセスの場合: StreamingPipelineReaderを使用
+        // For active processes: use StreamingPipelineReader
         const streamState = this.realtimeStreamSubscriber.getStreamState(sourceExecutionId);
         if (streamState && streamState.isActive) {
           console.error(
@@ -225,14 +225,14 @@ export class ProcessManager {
         }
       }
 
-      // 実行中プロセスでない場合、または失敗した場合: 従来のファイル読み取り
+      // If not active (or on failure), fall back to traditional file read
       if (!inputStream) {
         try {
           console.error(`ProcessManager: Using traditional file read for ${options.inputOutputId}`);
           const result = await this.fileManager.readFile(
             options.inputOutputId,
             0,
-            100 * 1024 * 1024, // 100MB まで読み取り
+            100 * 1024 * 1024, // read up to 100MB
             'utf-8'
           );
           resolvedInputData = result.content;
@@ -251,7 +251,7 @@ export class ProcessManager {
     const executionId = generateId();
     const startTime = getCurrentTimestamp();
 
-    // 実行情報の初期化
+    // Initialize execution info
     const resolvedWorkingDirectory = this.resolveWorkingDirectory(options.workingDirectory);
     const executionInfo: ExecutionInfo = {
       execution_id: executionId,
@@ -270,7 +270,7 @@ export class ProcessManager {
 
     this.executions.set(executionId, executionInfo);
 
-    // 新規ターミナル作成オプションがある場合
+    // If new terminal creation is requested
     if (options.createTerminal && this.terminalManager) {
       try {
         const terminalOptions: TerminalOptions = {
@@ -289,10 +289,10 @@ export class ProcessManager {
         const terminalInfo = await this.terminalManager.createTerminal(terminalOptions);
         executionInfo.terminal_id = terminalInfo.terminal_id;
 
-        // ターミナルにコマンドを送信
+        // Send command to terminal
         this.terminalManager.sendInput(terminalInfo.terminal_id, options.command, true);
 
-        // 実行情報を更新
+        // Update execution info
         executionInfo.status = 'completed';
         executionInfo.completed_at = getCurrentTimestamp();
         this.executions.set(executionId, executionInfo);
@@ -309,14 +309,14 @@ export class ProcessManager {
     }
 
     try {
-      // 実行オプションを準備
+      // Prepare execution options
       const { inputOutputId: _inputOutputId, ...baseOptions } = options;
       const updatedOptions: ExecutionOptions = {
         ...baseOptions,
         ...(resolvedInputData !== undefined && { inputData: resolvedInputData }),
       };
 
-      // StreamingPipelineReaderがある場合は特別処理
+      // Special handling when StreamingPipelineReader exists
       if (inputStream) {
         return await this.executeCommandWithInputStream(executionId, updatedOptions, inputStream);
       }
@@ -334,7 +334,7 @@ export class ProcessManager {
           throw new ExecutionError('Unsupported execution mode', { mode: options.executionMode });
       }
     } catch (error) {
-      // エラー時の実行情報更新
+      // Update execution info on error
       const updatedInfo = this.executions.get(executionId);
       if (updatedInfo) {
         updatedInfo.status = 'failed';
@@ -346,7 +346,7 @@ export class ProcessManager {
   }
 
   /**
-   * Issue #13: StreamingPipelineReaderを使用したコマンド実行
+  * Issue #13: Execute command using StreamingPipelineReader
    */
   private async executeCommandWithInputStream(
     executionId: string,
@@ -361,20 +361,20 @@ export class ProcessManager {
       let stderr = '';
       let outputTruncated = false;
 
-      // 環境変数の準備
+      // Prepare environment variables
       const env = getSafeEnvironment(
         process.env as Record<string, string>,
         options.environmentVariables
       );
 
-      // プロセスの起動
+      // Start process
       const child = spawn('sh', ['-c', options.command], {
         cwd: this.resolveWorkingDirectory(options.workingDirectory),
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      // StreamingPipelineReaderをSTDINに接続
+      // Connect StreamingPipelineReader to STDIN
       if (child.stdin) {
         inputStream.pipe(child.stdin);
       }
@@ -384,12 +384,12 @@ export class ProcessManager {
         child.kill('SIGTERM');
       });
 
-      // StreamPublisher通知
+      // Notify StreamPublisher
       if (this.streamPublisher) {
         this.streamPublisher.notifyProcessStart(executionId, options.command);
       }
 
-      // STDOUT処理
+      // Handle STDOUT
       if (child.stdout) {
         child.stdout.on('data', (data) => {
           const chunk = data.toString();
@@ -399,14 +399,14 @@ export class ProcessManager {
             outputTruncated = true;
           }
 
-          // StreamPublisher通知
+          // Notify StreamPublisher
           if (this.streamPublisher) {
             this.streamPublisher.notifyOutputData(executionId, chunk, false);
           }
         });
       }
 
-      // STDERR処理
+      // Handle STDERR
       if (options.captureStderr && child.stderr) {
         child.stderr.on('data', (data) => {
           const chunk = data.toString();
@@ -416,14 +416,14 @@ export class ProcessManager {
             outputTruncated = true;
           }
 
-          // StreamPublisher通知
+          // Notify StreamPublisher
           if (this.streamPublisher) {
             this.streamPublisher.notifyOutputData(executionId, chunk, true);
           }
         });
       }
 
-      // プロセス終了処理
+      // Handle process completion
       child.on('close', async (code) => {
         const executionInfo = this.executions.get(executionId);
         if (!executionInfo) {
@@ -431,10 +431,10 @@ export class ProcessManager {
           return;
         }
 
-        // 実行時間の計算
+        // Calculate execution time
         const executionTime = Date.now() - startTime;
 
-        // 実行情報の更新
+        // Update execution info
         executionInfo.status = code === 0 ? 'completed' : 'failed';
         executionInfo.completed_at = getCurrentTimestamp();
         if (code !== null) {
@@ -442,7 +442,7 @@ export class ProcessManager {
         }
         executionInfo.execution_time_ms = executionTime;
 
-        // 出力の保存
+        // Save output
         if (this.fileManager) {
           try {
             const combinedOutput = stdout + (options.captureStderr ? stderr : '');
@@ -458,7 +458,7 @@ export class ProcessManager {
 
         this.executions.set(executionId, executionInfo);
 
-        // StreamPublisher通知
+        // Notify StreamPublisher
         if (this.streamPublisher) {
           this.streamPublisher.notifyProcessEnd(executionId, code);
         }
@@ -470,7 +470,7 @@ export class ProcessManager {
       child.on('error', (error) => {
         console.error(`Process error for ${executionId}: ${error.message}`);
 
-        // StreamPublisher通知
+        // Notify StreamPublisher
         if (this.streamPublisher) {
           this.streamPublisher.notifyError(executionId, error);
         }
@@ -480,7 +480,7 @@ export class ProcessManager {
         );
       });
 
-      // タイムアウト処理
+      // Timeout handling
       const timeout = setTimeout(() => {
         console.error(`Process timeout for ${executionId}`);
         child.kill('SIGTERM');
@@ -508,13 +508,13 @@ export class ProcessManager {
       let stderr = '';
       let outputTruncated = false;
 
-      // 環境変数の準備
+      // Prepare environment variables
       const env = getSafeEnvironment(
         process.env as Record<string, string>,
         options.environmentVariables
       );
 
-      // プロセスの起動
+      // Start process
       const childProcess = spawn('/bin/bash', ['-c', options.command], {
         cwd: this.resolveWorkingDirectory(options.workingDirectory),
         env,
@@ -525,7 +525,7 @@ export class ProcessManager {
         this.processes.set(childProcess.pid, childProcess);
       }
 
-      // タイムアウトの設定
+      // Set timeout
       const timeout = setTimeout(async () => {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
@@ -546,13 +546,13 @@ export class ProcessManager {
             executionInfo.process_id = childProcess.pid;
           }
 
-          // 出力をFileManagerに保存（サイズに関係なく）
+          // Save output to FileManager (regardless of size)
           let outputFileId: string | undefined;
           try {
             outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
-            // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+            // Record file-save failures as critical errors and include them in execution info
             console.error(
               `[CRITICAL] Failed to save output file for execution ${executionId}:`,
               error
@@ -560,12 +560,12 @@ export class ProcessManager {
             executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
-          // 出力状態の詳細情報を設定
+          // Set detailed output status
           this.setOutputStatus(executionInfo, outputTruncated, 'timeout', outputFileId);
 
           this.executions.set(executionId, executionInfo);
 
-          // return_partial_on_timeout が true の場合は部分結果を返す
+          // Return partial result when return_partial_on_timeout is true
           if (options.returnPartialOnTimeout) {
             resolve(executionInfo);
             return;
@@ -575,7 +575,7 @@ export class ProcessManager {
         reject(new TimeoutError(options.timeoutSeconds));
       }, options.timeoutSeconds * 1000);
 
-      // 標準入力の送信
+      // Send stdin
       if (options.inputData) {
         childProcess.stdin?.write(options.inputData);
         childProcess.stdin?.end();
@@ -583,7 +583,7 @@ export class ProcessManager {
         childProcess.stdin?.end();
       }
 
-      // 標準出力の処理
+      // Handle stdout
       childProcess.stdout?.on('data', (data: Buffer) => {
         const output = data.toString();
         if (stdout.length + output.length <= options.maxOutputSize) {
@@ -594,7 +594,7 @@ export class ProcessManager {
         }
       });
 
-      // 標準エラー出力の処理
+      // Handle stderr
       if (options.captureStderr) {
         childProcess.stderr?.on('data', (data: Buffer) => {
           const output = data.toString();
@@ -607,7 +607,7 @@ export class ProcessManager {
         });
       }
 
-      // プロセス終了時の処理
+      // Handle process close
       childProcess.on('close', async (code) => {
         clearTimeout(timeout);
         if (childProcess.pid) {
@@ -628,13 +628,13 @@ export class ProcessManager {
           }
           executionInfo.completed_at = getCurrentTimestamp();
 
-          // 出力をFileManagerに保存（サイズに関係なく）
+          // Save output to FileManager (regardless of size)
           let outputFileId: string | undefined;
           try {
             outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
-            // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+            // Record file-save failures as critical errors and include them in execution info
             console.error(
               `[CRITICAL] Failed to save output file for execution ${executionId}:`,
               error
@@ -642,11 +642,11 @@ export class ProcessManager {
             executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
-          // 出力状態の詳細情報を設定
+          // Set detailed output status
           if (outputTruncated) {
             this.setOutputStatus(executionInfo, true, 'size_limit', outputFileId);
           } else {
-            // 通常完了時 - actuallyTruncated=false, 適当なreasonで完了時ガイダンスを表示
+            // Normal completion: actuallyTruncated=false, use a valid reason to show completion guidance
             this.setOutputStatus(executionInfo, false, 'size_limit', outputFileId);
           }
 
@@ -655,7 +655,7 @@ export class ProcessManager {
         }
       });
 
-      // エラー処理
+      // Error handling
       childProcess.on('error', (error) => {
         clearTimeout(timeout);
         if (childProcess.pid) {
@@ -683,9 +683,9 @@ export class ProcessManager {
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
-    // adaptiveモード: 1つのプロセスを起動し、以下の条件でバックグラウンドに移行
-    // 1. フォアグラウンドタイムアウトに達した場合
-    // 2. 出力サイズ制限に達した場合
+    // Adaptive mode: start one process and transition to background when:
+    // 1. Foreground timeout is reached
+    // 2. Output size limit is reached
     const returnPartialOnTimeout = options.returnPartialOnTimeout ?? true;
     const foregroundTimeout = options.foregroundTimeoutSeconds ?? 10;
 
@@ -696,13 +696,13 @@ export class ProcessManager {
       let outputTruncated = false;
       let backgroundTransitionReason: 'timeout' | 'output_size_limit' | null = null;
 
-      // 環境変数の準備
+      // Prepare environment variables
       const env = getSafeEnvironment(
         process.env as Record<string, string>,
         options.environmentVariables
       );
 
-      // プロセスの起動（バックグラウンド対応）
+      // Start process (supports background transition)
       const childProcess = spawn('/bin/bash', ['-c', options.command], {
         cwd: this.resolveWorkingDirectory(options.workingDirectory),
         env,
@@ -713,7 +713,7 @@ export class ProcessManager {
         this.processes.set(childProcess.pid, childProcess);
       }
 
-      // フォアグラウンドタイムアウトの設定
+      // Set foreground timeout
       const foregroundTimeoutHandle = setTimeout(() => {
         if (!backgroundTransitionReason) {
           backgroundTransitionReason = 'timeout';
@@ -721,7 +721,7 @@ export class ProcessManager {
         }
       }, foregroundTimeout * 1000);
 
-      // 最終タイムアウトの設定
+      // Set final timeout
       const finalTimeoutHandle = setTimeout(async () => {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
@@ -739,12 +739,12 @@ export class ProcessManager {
           executionInfo.completed_at = getCurrentTimestamp();
           executionInfo.execution_time_ms = Date.now() - startTime;
 
-          // 出力をFileManagerに保存
+          // Save output to FileManager
           try {
             const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
-            // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+            // Record file-save failures as critical errors and include them in execution info
             console.error(
               `[CRITICAL] Failed to save output file for execution ${executionId}:`,
               error
@@ -763,7 +763,7 @@ export class ProcessManager {
         reject(new TimeoutError(options.timeoutSeconds));
       }, options.timeoutSeconds * 1000);
 
-      // バックグラウンドに移行する関数
+      // Function to transition to background mode
       const transitionToBackground = async () => {
         clearTimeout(foregroundTimeoutHandle);
 
@@ -773,7 +773,7 @@ export class ProcessManager {
           executionInfo.stdout = sanitizeString(stdout);
           executionInfo.stderr = sanitizeString(stderr);
 
-          // 移行理由を記録
+          // Record transition reason
           if (backgroundTransitionReason === 'timeout') {
             executionInfo.transition_reason = 'foreground_timeout';
           } else if (backgroundTransitionReason === 'output_size_limit') {
@@ -784,13 +784,13 @@ export class ProcessManager {
             executionInfo.process_id = childProcess.pid;
           }
 
-          // 出力をFileManagerに保存
+          // Save output to FileManager
           let outputFileId: string | undefined;
           try {
             outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
-            // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+            // Record file-save failures as critical errors and include them in execution info
             console.error(
               `[CRITICAL] Failed to save output file for execution ${executionId}:`,
               error
@@ -798,7 +798,7 @@ export class ProcessManager {
             executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
-          // 出力状態の詳細情報を設定（バックグラウンド移行）
+          // Set detailed output status (background transition)
           this.setOutputStatus(
             executionInfo,
             outputTruncated,
@@ -808,7 +808,7 @@ export class ProcessManager {
 
           this.executions.set(executionId, executionInfo);
 
-          // バックグラウンド処理の継続設定（adaptive mode専用）
+          // Configure continued background handling (adaptive mode only)
           this.handleAdaptiveBackgroundTransition(executionId, childProcess, {
             ...options,
             timeoutSeconds: Math.max(
@@ -821,7 +821,7 @@ export class ProcessManager {
         }
       };
 
-      // 標準入力の送信
+      // Send stdin
       if (options.inputData) {
         childProcess.stdin?.write(options.inputData);
         childProcess.stdin?.end();
@@ -829,7 +829,7 @@ export class ProcessManager {
         childProcess.stdin?.end();
       }
 
-      // 標準出力の処理
+      // Handle stdout
       childProcess.stdout?.on('data', (data: Buffer) => {
         const output = data.toString();
         if (stdout.length + output.length <= options.maxOutputSize) {
@@ -838,7 +838,7 @@ export class ProcessManager {
           stdout += output.substring(0, options.maxOutputSize - stdout.length);
           outputTruncated = true;
 
-          // 出力サイズ制限に達した場合、バックグラウンドに移行
+          // Transition to background when output size limit is reached
           if (!backgroundTransitionReason) {
             backgroundTransitionReason = 'output_size_limit';
             transitionToBackground();
@@ -846,7 +846,7 @@ export class ProcessManager {
         }
       });
 
-      // 標準エラー出力の処理
+      // Handle stderr
       if (options.captureStderr) {
         childProcess.stderr?.on('data', (data: Buffer) => {
           const output = data.toString();
@@ -856,7 +856,7 @@ export class ProcessManager {
             stderr += output.substring(0, options.maxOutputSize - stderr.length);
             outputTruncated = true;
 
-            // 出力サイズ制限に達した場合、バックグラウンドに移行
+            // Transition to background when output size limit is reached
             if (!backgroundTransitionReason) {
               backgroundTransitionReason = 'output_size_limit';
               transitionToBackground();
@@ -865,7 +865,7 @@ export class ProcessManager {
         });
       }
 
-      // プロセス終了時の処理
+      // Handle process close
       childProcess.on('close', async (code) => {
         clearTimeout(foregroundTimeoutHandle);
         clearTimeout(finalTimeoutHandle);
@@ -873,7 +873,7 @@ export class ProcessManager {
           this.processes.delete(childProcess.pid);
         }
 
-        // バックグラウンドに移行していない場合のみ処理
+        // Handle only when no background transition occurred
         if (!backgroundTransitionReason) {
           const executionTime = Date.now() - startTime;
           const executionInfo = this.executions.get(executionId);
@@ -890,12 +890,12 @@ export class ProcessManager {
             }
             executionInfo.completed_at = getCurrentTimestamp();
 
-            // 出力をFileManagerに保存
+            // Save output to FileManager
             try {
               const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
               executionInfo.output_id = outputFileId;
             } catch (error) {
-              // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+              // Record file-save failures as critical errors and include them in execution info
               console.error(
                 `[CRITICAL] Failed to save output file for execution ${executionId}:`,
                 error
@@ -909,7 +909,7 @@ export class ProcessManager {
         }
       });
 
-      // エラー処理
+      // Error handling
       childProcess.on('error', (error) => {
         clearTimeout(foregroundTimeoutHandle);
         clearTimeout(finalTimeoutHandle);
@@ -962,7 +962,7 @@ export class ProcessManager {
       this.executions.set(executionId, executionInfo);
     }
 
-    // バックグラウンドプロセスの場合、出力を非同期で処理
+    // For background processes, handle output asynchronously
     if (options.executionMode === 'background') {
       this.handleBackgroundProcess(executionId, childProcess, options);
     }
@@ -983,7 +983,7 @@ export class ProcessManager {
     let stdout = '';
     let stderr = '';
 
-    // タイムアウトの設定（backgroundプロセス用）
+    // Set timeout (for background processes)
     const timeout = setTimeout(async () => {
       childProcess.kill('SIGTERM');
       setTimeout(() => {
@@ -1001,12 +1001,12 @@ export class ProcessManager {
         executionInfo.completed_at = getCurrentTimestamp();
         executionInfo.execution_time_ms = Date.now() - startTime;
 
-        // 出力をFileManagerに保存
+        // Save output to FileManager
         try {
           const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
           executionInfo.output_id = outputFileId;
         } catch (error) {
-          // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+          // Record file-save failures as critical errors and include them in execution info
           console.error(
             `[CRITICAL] Failed to save output file for execution ${executionId}:`,
             error
@@ -1016,7 +1016,7 @@ export class ProcessManager {
 
         this.executions.set(executionId, executionInfo);
 
-        // バックグラウンドプロセスタイムアウトのコールバック呼び出し
+        // Invoke timeout callback for background process
         if (this.backgroundProcessCallbacks.onTimeout) {
           setImmediate(async () => {
             try {
@@ -1028,7 +1028,7 @@ export class ProcessManager {
                 }
               }
             } catch (callbackError) {
-              // コールバックエラーは内部ログに記録のみ
+              // Record callback errors in internal logs only
               // console.error('Background process timeout callback error:', callbackError);
             }
           });
@@ -1036,7 +1036,7 @@ export class ProcessManager {
       }
     }, options.timeoutSeconds * 1000);
 
-    // 出力の収集
+    // Collect output
     childProcess.stdout?.on('data', (data: Buffer) => {
       stdout += data.toString();
     });
@@ -1047,7 +1047,7 @@ export class ProcessManager {
       });
     }
 
-    // プロセス終了時の処理
+    // Handle process close
     childProcess.on('close', async (code) => {
       clearTimeout(timeout);
       if (childProcess.pid) {
@@ -1061,12 +1061,12 @@ export class ProcessManager {
         executionInfo.execution_time_ms = Date.now() - startTime;
         executionInfo.completed_at = getCurrentTimestamp();
 
-        // 出力をファイルに保存
+        // Save output to file
         try {
           const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
           executionInfo.output_id = outputFileId;
         } catch (error) {
-          // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+          // Record file-save failures as critical errors and include them in execution info
           console.error(
             `[CRITICAL] Failed to save output file for execution ${executionId}:`,
             error
@@ -1076,7 +1076,7 @@ export class ProcessManager {
 
         this.executions.set(executionId, executionInfo);
 
-        // バックグラウンドプロセス正常終了のコールバック呼び出し
+        // Invoke completion callback for background process
         if (this.backgroundProcessCallbacks.onComplete) {
           setImmediate(async () => {
             try {
@@ -1088,7 +1088,7 @@ export class ProcessManager {
                 }
               }
             } catch (callbackError) {
-              // コールバックエラーは内部ログに記録のみ
+              // Record callback errors in internal logs only
               // console.error('Background process completion callback error:', callbackError);
             }
           });
@@ -1108,7 +1108,7 @@ export class ProcessManager {
         executionInfo.completed_at = getCurrentTimestamp();
         this.executions.set(executionId, executionInfo);
 
-        // バックグラウンドプロセスエラーのコールバック呼び出し
+        // Invoke error callback for background process
         if (this.backgroundProcessCallbacks.onError) {
           setImmediate(async () => {
             try {
@@ -1120,7 +1120,7 @@ export class ProcessManager {
                 }
               }
             } catch (callbackError) {
-              // コールバックエラーは内部ログに記録のみ
+              // Record callback errors in internal logs only
               // console.error('Background process error callback error:', callbackError);
             }
           });
@@ -1129,13 +1129,13 @@ export class ProcessManager {
     });
   }
 
-  // adaptive modeでバックグラウンドに移行したプロセスの処理
+  // Handle processes transitioned to background in adaptive mode
   private handleAdaptiveBackgroundTransition(
     executionId: string,
     childProcess: ChildProcess,
     options: ExecutionOptions
   ): void {
-    // タイムアウトの設定（最終タイムアウト）
+    // Set timeout (final timeout)
     const timeout = setTimeout(async () => {
       childProcess.kill('SIGTERM');
       setTimeout(() => {
@@ -1149,12 +1149,12 @@ export class ProcessManager {
         executionInfo.status = 'timeout';
         executionInfo.completed_at = getCurrentTimestamp();
 
-        // 既存の出力は保持（adaptive modeで既にキャプチャ済み）
+        // Keep existing output (already captured in adaptive mode)
         this.executions.set(executionId, executionInfo);
       }
     }, options.timeoutSeconds * 1000);
 
-    // プロセス終了時の処理
+    // Handle process close
     childProcess.on('close', async (code) => {
       clearTimeout(timeout);
       if (childProcess.pid) {
@@ -1167,7 +1167,7 @@ export class ProcessManager {
         executionInfo.exit_code = code || 0;
         executionInfo.completed_at = getCurrentTimestamp();
 
-        // 実行時間は全体（フォアグラウンド + バックグラウンド）で計算
+        // Calculate total execution time (foreground + background)
         if (executionInfo.started_at) {
           const startTime = new Date(executionInfo.started_at).getTime();
           executionInfo.execution_time_ms = Date.now() - startTime;
@@ -1175,7 +1175,7 @@ export class ProcessManager {
 
         this.executions.set(executionId, executionInfo);
 
-        // adaptive modeバックグラウンドプロセス正常終了のコールバック呼び出し
+        // Invoke completion callback for adaptive-mode background process
         if (this.backgroundProcessCallbacks.onComplete) {
           setImmediate(async () => {
             try {
@@ -1187,7 +1187,7 @@ export class ProcessManager {
                 }
               }
             } catch (callbackError) {
-              // コールバックエラーは内部ログに記録のみ
+              // Record callback errors in internal logs only
               // console.error('Adaptive background process completion callback error:', callbackError);
             }
           });
@@ -1212,7 +1212,7 @@ export class ProcessManager {
 
         this.executions.set(executionId, executionInfo);
 
-        // adaptive modeバックグラウンドプロセスエラーのコールバック呼び出し
+        // Invoke error callback for adaptive-mode background process
         if (this.backgroundProcessCallbacks.onError) {
           setImmediate(async () => {
             try {
@@ -1224,7 +1224,7 @@ export class ProcessManager {
                 }
               }
             } catch (callbackError) {
-              // コールバックエラーは内部ログに記録のみ
+              // Record callback errors in internal logs only
               // console.error('Adaptive background process error callback error:', callbackError);
             }
           });
@@ -1237,7 +1237,7 @@ export class ProcessManager {
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
-    // detachedモード: 完全にバックグラウンドで実行し、親プロセスとの接続を切断
+    // Detached mode: run fully in background and detach from parent process
     const env = getSafeEnvironment(
       process.env as Record<string, string>,
       options.environmentVariables
@@ -1246,11 +1246,11 @@ export class ProcessManager {
     const childProcess = spawn('/bin/bash', ['-c', options.command], {
       cwd: this.resolveWorkingDirectory(options.workingDirectory),
       env,
-      stdio: ['ignore', 'pipe', 'pipe'], // stdin は無視
-      detached: true, // 完全にデタッチ
+      stdio: ['ignore', 'pipe', 'pipe'], // ignore stdin
+      detached: true, // fully detached
     });
 
-    // デタッチされたプロセスのPIDは記録するが、プロセス管理からは除外
+    // Record detached process PID but exclude it from process management
     const executionInfo = this.executions.get(executionId);
     if (executionInfo && childProcess.pid !== undefined) {
       executionInfo.process_id = childProcess.pid;
@@ -1258,8 +1258,8 @@ export class ProcessManager {
       this.executions.set(executionId, executionInfo);
     }
 
-    // デタッチされたプロセスは親プロセスの終了後も継続実行されるため、
-    // 出力の収集は限定的
+    // Detached processes continue after parent exits,
+    // so output collection is limited
     const startTime = Date.now();
     let stdout = '';
     let stderr = '';
@@ -1276,7 +1276,7 @@ export class ProcessManager {
       });
     }
 
-    // プロセスの終了を監視（デタッチされているため必ずしも捕捉されない）
+    // Monitor process exit (not always capturable when detached)
     childProcess.on('close', async (code) => {
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
@@ -1289,7 +1289,7 @@ export class ProcessManager {
           const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
           executionInfo.output_id = outputFileId;
         } catch (error) {
-          // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+          // Record file-save failures as critical errors and include them in execution info
           console.error(
             `[CRITICAL] Failed to save output file for execution ${executionId}:`,
             error
@@ -1299,7 +1299,7 @@ export class ProcessManager {
 
         this.executions.set(executionId, executionInfo);
 
-        // detachedプロセス正常終了のコールバック呼び出し
+        // Invoke completion callback for detached process
         if (this.backgroundProcessCallbacks.onComplete) {
           setImmediate(async () => {
             try {
@@ -1311,7 +1311,7 @@ export class ProcessManager {
                 }
               }
             } catch (callbackError) {
-              // コールバックエラーは内部ログに記録のみ
+              // Record callback errors in internal logs only
               // console.error('Detached process completion callback error:', callbackError);
             }
           });
@@ -1327,7 +1327,7 @@ export class ProcessManager {
         executionInfo.completed_at = getCurrentTimestamp();
         this.executions.set(executionId, executionInfo);
 
-        // detachedプロセスエラーのコールバック呼び出し
+        // Invoke error callback for detached process
         if (this.backgroundProcessCallbacks.onError) {
           setImmediate(async () => {
             try {
@@ -1339,7 +1339,7 @@ export class ProcessManager {
                 }
               }
             } catch (callbackError) {
-              // コールバックエラーは内部ログに記録のみ
+              // Record callback errors in internal logs only
               // console.error('Detached process error callback error:', callbackError);
             }
           });
@@ -1347,7 +1347,7 @@ export class ProcessManager {
       }
     });
 
-    // プロセスをデタッチ
+    // Detach process
     childProcess.unref();
 
     const resultExecutionInfo = this.executions.get(executionId);
@@ -1363,7 +1363,7 @@ export class ProcessManager {
     stderr: string
   ): Promise<string> {
     if (!this.fileManager) {
-      // FileManagerが利用できない場合は、従来の方法でファイルを保存
+      // If FileManager is unavailable, save file using legacy method
       const outputFileId = generateId();
       const filePath = path.join(this.outputDir, `${outputFileId}.json`);
 
@@ -1378,34 +1378,34 @@ export class ProcessManager {
       return outputFileId;
     }
 
-    // FileManagerを使用して出力ファイルを作成
+    // Create output file using FileManager
     const combinedOutput = stdout + (stderr ? '\n--- STDERR ---\n' + stderr : '');
     return await this.fileManager.createOutputFile(combinedOutput, executionId);
   }
 
   /**
-   * 出力状態の詳細情報を設定するヘルパー関数
+  * Helper to set detailed output status information
    * Issue #14: Enhanced guidance messages for adaptive mode transitions
-   * 改善: outputTruncated の代わりに reason ベースで状態を判定
+  * Improvement: determine status by reason instead of outputTruncated
    */
   private setOutputStatus(
     executionInfo: ExecutionInfo,
-    actuallyTruncated: boolean, // 実際に出力が切り捨てられたか
+    actuallyTruncated: boolean, // whether output was actually truncated
     reason: OutputTruncationReason,
     outputId?: string
   ): void {
-    // reasonに基づいて出力状態を設定
-    const needsGuidance = !!outputId; // output_idがあれば常にガイダンスを提供
+    // Set output status based on reason
+    const needsGuidance = !!outputId; // always provide guidance when output_id exists
 
-    // 後方互換性のため outputTruncated を設定
+    // Set outputTruncated for backward compatibility
     executionInfo.output_truncated =
       actuallyTruncated || reason === 'timeout' || reason === 'background_transition';
 
-    // Issue #14: バックグラウンド移行とタイムアウトは特別扱い
+    // Issue #14: Handle background transitions and timeouts specially
     if (reason === 'background_transition') {
       executionInfo.truncation_reason = reason;
       executionInfo.output_status = {
-        complete: false, // バックグラウンド実行中は未完了
+        complete: false, // incomplete while running in background
         reason: reason,
         available_via_output_id: !!outputId,
         recommended_action: outputId ? 'use_read_execution_output' : undefined,
@@ -1438,7 +1438,7 @@ export class ProcessManager {
     if (reason === 'timeout') {
       executionInfo.truncation_reason = reason;
       executionInfo.output_status = {
-        complete: false, // タイムアウトは未完了
+        complete: false, // timeout means incomplete
         reason: reason,
         available_via_output_id: !!outputId,
         recommended_action: outputId ? 'use_read_execution_output' : undefined,
@@ -1462,7 +1462,7 @@ export class ProcessManager {
       return;
     }
 
-    // 実際に出力が切り捨てられた場合
+    // When output was actually truncated
     if (actuallyTruncated) {
       executionInfo.truncation_reason = reason;
       executionInfo.output_status = {
@@ -1472,7 +1472,7 @@ export class ProcessManager {
         recommended_action: outputId ? 'use_read_execution_output' : undefined,
       };
 
-      // 状況に応じたメッセージとアクションの設定
+      // Set message and actions based on situation
       switch (reason) {
         case 'size_limit':
           executionInfo.message = `Output exceeded size limit. ${outputId ? 'Complete output available via output_id.' : 'Output was truncated.'}`;
@@ -1509,7 +1509,7 @@ export class ProcessManager {
           }
       }
     } else {
-      // 完了した場合（切り捨てなし）
+      // Completed case (no truncation)
       executionInfo.output_status = {
         complete: true,
         available_via_output_id: !!outputId,
@@ -1542,7 +1542,7 @@ export class ProcessManager {
   }): { executions: ExecutionInfo[]; total: number } {
     let executions = Array.from(this.executions.values());
 
-    // フィルタリング
+    // Filtering
     if (filter) {
       if (filter.status) {
         executions = executions.filter((exec) => exec.status === filter.status);
@@ -1552,13 +1552,13 @@ export class ProcessManager {
         executions = executions.filter((exec) => pattern.test(exec.command));
       }
       if (filter.sessionId) {
-        // セッション管理は今後実装
+        // Session management will be implemented later
       }
     }
 
     const total = executions.length;
 
-    // ページネーション
+    // Pagination
     if (filter?.offset || filter?.limit) {
       const offset = filter.offset || 0;
       const limit = filter.limit || 50;
@@ -1585,19 +1585,19 @@ export class ProcessManager {
     }
 
     try {
-      // プロセスを終了
+      // Terminate process
       const signalName = signal === 'KILL' ? 'SIGKILL' : `SIG${signal}`;
       const killed = childProcess.kill(signalName as NodeJS.Signals);
 
       if (!killed && force && signal !== 'KILL') {
-        // 強制終了
+        // Force kill
         childProcess.kill('SIGKILL');
       }
 
-      // プロセスが終了するまで待機
+      // Wait until process exits
       await new Promise<void>((resolve) => {
         childProcess.on('close', () => resolve());
-        setTimeout(() => resolve(), 5000); // 5秒でタイムアウト
+        setTimeout(() => resolve(), 5000); // timeout after 5 seconds
       });
 
       this.processes.delete(processId);
@@ -1626,7 +1626,7 @@ export class ProcessManager {
     const processes: ExecutionProcessInfo[] = [];
 
     for (const [pid] of this.processes) {
-      // 対応する実行情報を検索
+      // Find corresponding execution info
       const execution = Array.from(this.executions.values()).find(
         (exec) => exec.process_id === pid
       );
@@ -1661,7 +1661,7 @@ export class ProcessManager {
   }
 
   cleanup(): void {
-    // 実行中のプロセスを全て終了
+    // Terminate all running processes
     for (const [, childProcess] of this.processes) {
       try {
         childProcess.kill('SIGTERM');
@@ -1671,7 +1671,7 @@ export class ProcessManager {
           }
         }, 5000);
       } catch (error) {
-        // エラーログを内部ログに記録（標準出力を避ける）
+        // Record error in internal log (avoid stdout)
         // console.error(`Failed to cleanup process ${pid}:`, error);
       }
     }
@@ -1680,7 +1680,7 @@ export class ProcessManager {
     this.executions.clear();
   }
 
-  // ワーキングディレクトリ管理
+  // Working directory management
   setDefaultWorkingDirectory(workingDirectory: string): {
     success: boolean;
     previous_working_directory: string;
@@ -1689,7 +1689,7 @@ export class ProcessManager {
   } {
     const previousWorkdir = this.defaultWorkingDirectory;
 
-    // ディレクトリの検証
+    // Validate directory
     if (!this.isAllowedWorkingDirectory(workingDirectory)) {
       throw new Error(`Working directory not allowed: ${workingDirectory}`);
     }
@@ -1713,7 +1713,7 @@ export class ProcessManager {
   }
 
   private isAllowedWorkingDirectory(workingDirectory: string): boolean {
-    // パスの正規化を行って比較
+    // Compare using normalized paths
     const normalizedPath = path.resolve(workingDirectory);
     return this.allowedWorkingDirectories.some((allowedDir) => {
       const normalizedAllowed = path.resolve(allowedDir);
