@@ -34,9 +34,9 @@ export class FileManager {
     executionId?: string,
     customName?: string
   ): Promise<string> {
-    // ファイル数の制限チェック
+    // Check file count limits
     if (this.files.size >= this.maxFiles) {
-      // 古いファイルを自動削除
+      // Automatically delete old files
       await this.cleanupOldFiles(100);
     }
 
@@ -162,7 +162,7 @@ export class FileManager {
   }): { files: FileInfo[]; total_count: number } {
     let files = Array.from(this.files.values());
 
-    // フィルタリング
+    // Filtering
     if (filter) {
       if (filter.outputType && filter.outputType !== 'all') {
         files = files.filter((file) => file.output_type === filter.outputType);
@@ -180,12 +180,12 @@ export class FileManager {
 
     const totalCount = files.length;
 
-    // 制限
+    // Limits
     if (filter?.limit) {
       files = files.slice(0, filter.limit);
     }
 
-    // 作成日時でソート（新しい順）
+    // Sort by creation date (newest first)
     files.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return {
@@ -217,14 +217,14 @@ export class FileManager {
           continue;
         }
 
-        // ファイルシステムからファイルを削除
+        // Delete file from filesystem
         await fs.unlink(fileInfo.path);
 
-        // マップから削除
+        // Remove from map
         this.files.delete(outputId);
         deletedFiles.push(outputId);
       } catch (error) {
-        // エラーログを内部ログに記録（標準出力を避ける）
+        // Record error to internal log (avoid stdout)
         // console.error(`Failed to delete file ${outputId}:`, error);
         failedFiles.push(outputId);
       }
@@ -240,7 +240,7 @@ export class FileManager {
   private async cleanupOldFiles(deleteCount: number): Promise<void> {
     const files = Array.from(this.files.entries());
 
-    // 作成日時でソート（古い順）
+    // Sort by creation date (oldest first)
     files.sort(
       ([, a], [, b]) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
@@ -252,13 +252,13 @@ export class FileManager {
         await fs.unlink(fileInfo.path);
         this.files.delete(fileId);
       } catch (error) {
-        // エラーログを内部ログに記録（標準出力を避ける）
+        // Record error to internal log (avoid stdout)
         // console.error(`Failed to cleanup file ${fileId}:`, error);
       }
     }
   }
 
-  // 実行IDに関連するファイルを削除
+  // Delete files related to an execution ID
   async deleteExecutionFiles(executionId: string): Promise<number> {
     const filesToDelete = Array.from(this.files.entries())
       .filter(([, file]) => file.execution_id === executionId)
@@ -272,7 +272,7 @@ export class FileManager {
     return result.total_deleted;
   }
 
-  // 使用統計の取得
+  // Get usage statistics
   getUsageStats(): {
     total_files: number;
     files_by_type: Record<OutputType, number>;
@@ -308,13 +308,13 @@ export class FileManager {
   }
 
   async cleanup(): Promise<void> {
-    // 全てのファイルを削除
+    // Delete all files
     const allOutputIds = Array.from(this.files.keys());
 
     try {
       await this.deleteFiles(allOutputIds, true);
     } catch (error) {
-      // エラーログを内部ログに記録（標準出力を避ける）
+      // Record error to internal log (avoid stdout)
       // console.error('Failed to cleanup files:', error);
     }
 
@@ -322,7 +322,7 @@ export class FileManager {
   }
 
   /**
-   * Issue #13: output_idから実行IDを取得
+   * Issue #13: Get execution ID from output_id
    */
   getExecutionIdByOutputId(outputId: string): string | undefined {
     const fileInfo = this.files.get(outputId);
@@ -330,7 +330,7 @@ export class FileManager {
   }
 
   /**
-   * Issue #15: ディレクトリサイズベースのクリーンアップ提案
+   * Issue #15: Directory size-based cleanup suggestions
    */
   async getCleanupSuggestions(options?: {
     maxSizeMB?: number;
@@ -350,7 +350,7 @@ export class FileManager {
     const maxAgeHours = options?.maxAgeHours || 24; // Default: 24 hours
     const includeWarnings = options?.includeWarnings ?? true;
 
-    // 現在のディレクトリサイズと情報を取得
+    // Get current directory size and info
     const stats = this.getUsageStats();
     const currentSizeMB = stats.total_size_bytes / (1024 * 1024);
     const currentTime = Date.now();
@@ -360,12 +360,12 @@ export class FileManager {
       current_file_count: stats.total_files,
     };
 
-    // 閾値チェックとクリーンアップ候補の特定
+    // Threshold checks and identify cleanup candidates
     if (includeWarnings && (currentSizeMB > maxSizeMB || stats.total_files > 1000)) {
       const cleanupCandidates: string[] = [];
       let estimatedSavings = 0;
 
-      // 古いファイルを特定
+      // Identify old files
       for (const [outputId, fileInfo] of this.files) {
         const fileAge = currentTime - new Date(fileInfo.created_at).getTime();
         const fileAgeHours = fileAge / (1000 * 60 * 60);
@@ -376,7 +376,7 @@ export class FileManager {
         }
       }
 
-      // 大きなファイルも候補に追加（サイズが平均の3倍以上）
+      // Also add large files as candidates (>= 3x average)
       if (cleanupCandidates.length < 10 && stats.average_file_size > 0) {
         const largeSizeThreshold = stats.average_file_size * 3;
         for (const [outputId, fileInfo] of this.files) {
@@ -414,7 +414,7 @@ export class FileManager {
   }
 
   /**
-   * Issue #15: 年齢ベースの自動クリーンアップ
+   * Issue #15: Age-based auto cleanup
    */
   async performAutoCleanup(options?: {
     maxAgeHours?: number;
@@ -435,12 +435,12 @@ export class FileManager {
     const preserveCandidates: string[] = [];
     let spaceFeed = 0;
 
-    // ファイルを作成時間でソート（新しい順）
+    // Sort files by creation time (newest first)
     const sortedFiles = Array.from(this.files.entries()).sort(
       ([, a], [, b]) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
-    // 最新のN個は保持、残りは年齢でチェック
+    // Preserve the newest N items; check age for the rest
     for (let i = 0; i < sortedFiles.length; i++) {
       const entry = sortedFiles[i];
       if (!entry) continue;
@@ -448,10 +448,10 @@ export class FileManager {
       const [outputId, fileInfo] = entry;
 
       if (i < preserveRecent) {
-        // 最新のN個は保持
+        // Preserve newest N items
         preserveCandidates.push(outputId);
       } else {
-        // 古いファイルかチェック
+        // Check if file is old
         const fileAge = currentTime - new Date(fileInfo.created_at).getTime();
         const fileAgeHours = fileAge / (1000 * 60 * 60);
 
@@ -466,13 +466,13 @@ export class FileManager {
 
     const spaceFreedMB = Math.round((spaceFeed / (1024 * 1024)) * 100) / 100;
 
-    // 実際の削除実行（dryRunでない場合）
+    // Perform actual deletions (when not dry run)
     if (!dryRun && deleteCandidates.length > 0) {
       try {
         await this.deleteFiles(deleteCandidates, true);
       } catch (error) {
         console.error('Auto cleanup failed:', error);
-        // エラーの場合は削除されなかった扱い
+        // On error, treat as not deleted
         return {
           deleted_files: [],
           preserved_files: Array.from(this.files.keys()),

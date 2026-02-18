@@ -499,7 +499,7 @@ export class BackofficeServer {
     const includeAnsi = (q.get('include_ansi') || 'false') === 'true';
     const includeFg = (q.get('include_foreground_process') || 'false') === 'true';
 
-    // 初回スナップショットを送信
+    // Send initial snapshot
     try {
       const out = await this.deps.terminalManager.getOutput(
         id,
@@ -516,8 +516,8 @@ export class BackofficeServer {
       return;
     }
 
-    // TerminalManager のイベントに連結（イベント駆動）
-    // 端末出力の変化があれば push
+    // Attach to TerminalManager events (event-driven)
+    // Push when terminal output changes
   const ev = this.deps.terminalManager.getEventEmitter();
     let heartbeat: NodeJS.Timeout | null = null;
 
@@ -530,7 +530,7 @@ export class BackofficeServer {
           includeAnsi,
           includeFg
         );
-        // 変化が無い場合は送らない（心拍は別で送る）
+        // Don't send if there is no change (heartbeat is sent separately)
         if (out.line_count > 0) {
           this.writeSSE(res, 'terminal_output', out);
           lastStart = out.next_start_line;
@@ -544,7 +544,7 @@ export class BackofficeServer {
 
     const onData = () => { void pushLatest(); };
     const onExit = () => {
-      // 最後のスナップショット送信（可能なら）
+    // Send final snapshot if possible
       void pushLatest().finally(() => {
         this.writeSSE(res, 'end', { reason: 'terminal_closed' });
         cleanup();
@@ -565,7 +565,7 @@ export class BackofficeServer {
       ev.on(`terminal:exit:${id}`, onExit);
     }
 
-    // アイドル時はハートビート（10秒間隔）
+    // Heartbeat during idle (10s interval)
     heartbeat = startHeartbeat((event, data) => this.writeSSE(res, event, data));
 
     req.on('close', cleanup);
@@ -575,7 +575,7 @@ export class BackofficeServer {
   private async handleRemoteExecSSE(res: ServerResponse, id: string, req: http.IncomingMessage) {
     if (!this.ensureRemoteBackend(res)) return;
     this.initSSE(res);
-    // Executor の SSE をそのままプロキシする（イベント駆動）
+    // Proxy Executor's SSE as-is (event-driven)
     const baseUrl = (process.env['EXECUTOR_URL'] || `http://${process.env['EXECUTOR_HOST'] || '127.0.0.1'}:${process.env['EXECUTOR_PORT'] || '4030'}`).replace(/\/$/, '');
     const url = `${baseUrl}/v1/exec/${encodeURIComponent(id)}/sse`;
     const token = process.env['EXECUTOR_TOKEN'];
@@ -606,7 +606,7 @@ export class BackofficeServer {
             }
           }
         } catch (e) {
-          // 接続中断などは黙殺して終了
+          // Ignore connection interruptions and finish
         } finally {
           if (!closed) {
             closed = true;

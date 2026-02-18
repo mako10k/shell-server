@@ -86,24 +86,24 @@ export class TerminalManager {
   private readonly maxTerminals: number;
   private readonly maxOutputLines: number;
   private readonly maxHistoryLines: number;
-  // イベント駆動のSSE連携用: 端末ごとの出力/終了イベントを発火
+  // Event-driven SSE integration: emit per-terminal output/exit events
   private events = new EventEmitter();
 
   constructor(maxTerminals = 20, maxOutputLines = 10000, maxHistoryLines = 1000) {
     this.maxTerminals = maxTerminals;
     this.maxOutputLines = maxOutputLines;
     this.maxHistoryLines = maxHistoryLines;
-  // 多数のSSEクライアントが同一端末に接続しても警告が出ないように上限を緩める
-  this.events.setMaxListeners(0); // 0 = 無制限
+  // Relax listener limit so many SSE clients can connect to the same terminal without warnings
+  this.events.setMaxListeners(0); // 0 = unlimited
   }
 
-  // SSE連携等のための読み取り専用の EventEmitter 参照
+  // Read-only EventEmitter reference for SSE integration and similar uses
   getEventEmitter(): EventEmitter {
     return this.events;
   }
 
   async createTerminal(options: TerminalOptions): Promise<TerminalInfo> {
-    // ターミナル数の制限チェック
+    // Check terminal count limit
     if (this.terminals.size >= this.maxTerminals) {
       throw new ResourceLimitError('terminals', this.maxTerminals);
     }
@@ -111,14 +111,14 @@ export class TerminalManager {
     const terminalId = generateId();
     const now = getCurrentTimestamp();
 
-    // デフォルト値の設定
+    // Set default values
     const shellType = options.shellType || 'bash';
     const dimensions = options.dimensions || { width: 80, height: 24 };
 
-    // シェルコマンドの決定
+    // Determine shell command
     const shellCommand = this.getShellCommand(shellType);
 
-    // 環境変数の準備
+    // Prepare environment variables
     const env = getSafeEnvironment(
       process.env as Record<string, string>,
       options.environmentVariables
@@ -205,23 +205,23 @@ export class TerminalManager {
     const session = this.terminals.get(terminalId);
     if (!session) return;
 
-    // 出力をバッファに追加
+    // Append output to buffer
     const lines = data.split('\n');
     session.outputBuffer.push(...lines);
 
-    // バッファサイズの制限
+    // Limit buffer size
     if (session.outputBuffer.length > this.maxOutputLines) {
       session.outputBuffer = session.outputBuffer.slice(-this.maxOutputLines);
     }
 
-    // 最終活動時刻の更新
+    // Update last activity time
     session.lastActivity = new Date();
     session.info.last_activity = getCurrentTimestamp();
     session.info.status = 'active';
 
-  // 出力イベントを発火（SSEへ伝搬させるため）
-  // 端末IDごとのイベントチャンネル: `terminal:output:<id>`
-  this.events.emit(`terminal:output:${terminalId}`);
+    // Emit output event (to propagate to SSE)
+    // Per-terminal event channel: `terminal:output:<id>`
+    this.events.emit(`terminal:output:${terminalId}`);
   }
 
   private handleTerminalExit(
@@ -234,13 +234,13 @@ export class TerminalManager {
     session.info.status = 'closed';
     session.info.last_activity = getCurrentTimestamp();
 
-    // 一定時間後にセッションをクリーンアップ
+    // Cleanup session after a delay
     setTimeout(() => {
       this.terminals.delete(terminalId);
-    }, 30000); // 30秒後
+    }, 30000); // after 30 seconds
 
-  // 終了イベントを発火（SSEへ伝搬）
-  this.events.emit(`terminal:exit:${terminalId}`);
+    // Emit exit event (propagate to SSE)
+    this.events.emit(`terminal:exit:${terminalId}`);
   }
 
   async getTerminal(terminalId: string, updateForegroundProcess = true): Promise<TerminalInfo> {
@@ -249,7 +249,7 @@ export class TerminalManager {
       throw new ResourceNotFoundError('terminal', terminalId);
     }
 
-    // フォアグラウンドプロセス情報を更新
+    // Update foreground process information
     if (updateForegroundProcess) {
       await this.updateForegroundProcess(session);
     }
@@ -264,7 +264,7 @@ export class TerminalManager {
   }): { terminals: TerminalInfo[]; total: number } {
     let terminals = Array.from(this.terminals.values()).map((session) => ({ ...session.info }));
 
-    // フィルタリング
+    // Filtering
     if (filter) {
       if (filter.sessionNamePattern) {
         const pattern = new RegExp(filter.sessionNamePattern, 'i');
@@ -278,7 +278,7 @@ export class TerminalManager {
 
     const total = terminals.length;
 
-    // 制限
+    // Limit
     if (filter?.limit) {
       terminals = terminals.slice(0, filter.limit);
     }
@@ -307,7 +307,7 @@ export class TerminalManager {
       throw new ExecutionError('Terminal is closed');
     }
 
-    // プログラムガードチェック
+    // Program guard check
     let guardResult: { passed: boolean; target?: string } | undefined;
     if (sendTo) {
       const guardPassed = await this.checkProgramGuard(terminalId, sendTo);
@@ -322,7 +322,7 @@ export class TerminalManager {
       let inputToSend: string;
 
       if (rawBytes) {
-        // バイト列として送信（16進数文字列として受け取った場合）
+        // Send as raw bytes (if received as a hex string)
         try {
           const bytes = Buffer.from(input, 'hex');
           inputToSend = bytes.toString('binary');
@@ -330,19 +330,19 @@ export class TerminalManager {
           throw new ExecutionError('Invalid hex string for raw_bytes mode');
         }
       } else if (controlCodes) {
-        // 制御コードのエスケープシーケンスを解釈
+        // Interpret escape sequences for control codes
         inputToSend = this.parseControlCodes(input);
         if (execute) {
           inputToSend += '\r';
         }
       } else {
-        // 通常の入力
+        // Normal input
         inputToSend = execute ? `${input}\r` : input;
       }
 
       session.ptyProcess.write(inputToSend);
 
-      // 履歴に追加（executeの場合のみ、制御コードは除く）
+      // Add to history (only if execute, excluding control codes and raw bytes)
       if (execute && input.trim() && !controlCodes && !rawBytes) {
         session.history.push(input.trim());
         if (session.history.length > this.maxHistoryLines) {
@@ -350,11 +350,11 @@ export class TerminalManager {
         }
       }
 
-      // 活動時刻の更新
+      // Update activity time
       session.lastActivity = new Date();
       session.info.last_activity = getCurrentTimestamp();
 
-      // フォアグラウンドプロセス情報を非同期で更新（パフォーマンスのため）
+      // Update foreground process info asynchronously (for performance)
       this.updateForegroundProcess(session).catch((err) => {
         console.warn(`Failed to update foreground process for terminal ${terminalId}:`, err);
       });

@@ -1,22 +1,22 @@
 /**
- * Issue #13: リアルタイムストリーミング機能
- * リアルタイム出力配信のためのSubscriber
+ * Issue #13: Real-time streaming feature
+ * Subscriber for real-time output delivery
  */
 
 import { StreamSubscriber } from './stream-publisher.js';
 import { generateId, getCurrentTimestamp } from '../utils/helpers.js';
 
 interface RealtimeStreamOptions {
-  /** バッファサイズ（バイト）*/
+  /** Buffer size (bytes) */
   bufferSize?: number;
 
-  /** 通知間隔（ミリ秒）*/
+  /** Notification interval (ms) */
   notificationInterval?: number;
 
-  /** 最大保持時間（秒）*/
+  /** Max retention time (seconds) */
   maxRetentionSeconds?: number;
 
-  /** 最大バッファ数 */
+  /** Max buffers */
   maxBuffers?: number;
 }
 
@@ -39,8 +39,8 @@ export interface StreamState {
 }
 
 /**
- * リアルタイムストリーミング用のSubscriber
- * プロセス出力をメモリ内にバッファして、リアルタイム配信を可能にする
+ * Subscriber for real-time streaming
+ * Buffer process output in memory to enable real-time delivery
  */
 export class RealtimeStreamSubscriber implements StreamSubscriber {
   public readonly id: string;
@@ -53,12 +53,12 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
     this.options = {
       bufferSize: 8192,
       notificationInterval: 100,
-      maxRetentionSeconds: 3600, // 1時間
+      maxRetentionSeconds: 3600, // 1 hour
       maxBuffers: 1000,
       ...options,
     };
 
-    // 定期的なクリーンアップを開始
+    // Start periodic cleanup
     this.startCleanupTimer();
   }
 
@@ -85,7 +85,7 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
       return;
     }
 
-    // バッファを作成
+    // Create buffer
     const buffer: StreamBuffer = {
       timestamp: getCurrentTimestamp(),
       data,
@@ -93,14 +93,14 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
       sequenceNumber: streamState.sequenceCounter++,
     };
 
-    // バッファを追加（サイズ制限チェック）
+    // Append buffer (size limit check)
     streamState.buffers.push(buffer);
     streamState.totalBytesReceived += data.length;
     streamState.lastUpdateTime = getCurrentTimestamp();
 
-    // バッファ数の制限チェック
+    // Check buffer count limit
     if (streamState.buffers.length > this.options.maxBuffers) {
-      // 古いバッファを削除
+      // Remove old buffers
       const removed = streamState.buffers.splice(
         0,
         streamState.buffers.length - this.options.maxBuffers
@@ -126,7 +126,7 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
       streamState.isActive = false;
       streamState.lastUpdateTime = getCurrentTimestamp();
 
-      // エラー情報をバッファに追加
+      // Append error info to buffer
       const errorBuffer: StreamBuffer = {
         timestamp: getCurrentTimestamp(),
         data: `\n[ERROR] ${error.message}\n`,
@@ -140,14 +140,14 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
   }
 
   /**
-   * 指定された実行のストリーム状態を取得
+   * Get stream state for the specified execution
    */
   getStreamState(executionId: string): StreamState | undefined {
     return this.streams.get(executionId);
   }
 
   /**
-   * 指定された実行の最新バッファを取得
+   * Get latest buffers for the specified execution
    */
   getLatestBuffers(executionId: string, count: number = 10): StreamBuffer[] {
     const streamState = this.streams.get(executionId);
@@ -159,7 +159,7 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
   }
 
   /**
-   * 指定された実行の指定された位置からのバッファを取得
+   * Get buffers from the specified sequence for the execution
    */
   getBuffersFromSequence(
     executionId: string,
@@ -176,7 +176,7 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
   }
 
   /**
-   * アクティブなストリーム一覧を取得
+   * Get list of active streams
    */
   getActiveStreams(): string[] {
     return Array.from(this.streams.entries())
@@ -185,21 +185,21 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
   }
 
   /**
-   * 全ストリーム一覧を取得
+   * Get all streams list
    */
   getAllStreams(): string[] {
     return Array.from(this.streams.keys());
   }
 
   /**
-   * 指定されたストリームを削除
+   * Remove specified stream
    */
   removeStream(executionId: string): boolean {
     return this.streams.delete(executionId);
   }
 
   /**
-   * 統計情報を取得
+   * Get statistics
    */
   getStats(): {
     totalStreams: number;
@@ -228,10 +228,10 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
   }
 
   /**
-   * 定期的なクリーンアップタイマーを開始
+   * Start periodic cleanup timer
    */
   private startCleanupTimer(): void {
-    // 5分ごとにクリーンアップを実行
+    // Run cleanup every 5 minutes
     this.cleanupInterval = setInterval(
       () => {
         this.cleanup();
@@ -241,7 +241,7 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
   }
 
   /**
-   * 古いストリームをクリーンアップ
+   * Clean up old streams
    */
   private cleanup(): void {
     const now = Date.now();
@@ -251,7 +251,7 @@ export class RealtimeStreamSubscriber implements StreamSubscriber {
     for (const [executionId, state] of this.streams.entries()) {
       const lastUpdateTime = new Date(state.lastUpdateTime).getTime();
 
-      // 非アクティブで保持期間を超えている場合は削除対象
+      // Mark for removal if inactive and retention exceeded
       if (!state.isActive && now - lastUpdateTime > maxRetentionMs) {
         toRemove.push(executionId);
       }

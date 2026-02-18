@@ -19,12 +19,12 @@ export class MonitoringManager {
   private readonly maxMetricsHistory = 1000;
 
   constructor() {
-    // システム統計の定期収集を開始
+    // Start periodic collection of system statistics
     this.startSystemMonitoring();
   }
 
   /**
-   * プロセス情報取得用の exec コマンド実行ヘルパー
+   * Helper to execute an exec command for retrieving process information
    */
   private async getExecAsync() {
     const { exec } = await import('child_process');
@@ -51,7 +51,7 @@ export class MonitoringManager {
 
     this.monitors.set(monitorId, monitorInfo);
 
-    // メトリクス収集の開始
+    // Start metrics collection
     const interval = setInterval(() => {
       this.collectProcessMetrics(monitorId, processId, includeMetrics);
     }, intervalMs);
@@ -72,55 +72,55 @@ export class MonitoringManager {
     try {
       const metrics: ProcessMetrics = {};
 
-      // CPU使用率の測定
+      // Measure CPU usage
       if (!includeMetrics || includeMetrics.includes('cpu')) {
         metrics.cpu_usage_percent = await this.getCpuUsage(processId);
       }
 
-      // メモリ使用量の測定
+      // Measure memory usage
       if (!includeMetrics || includeMetrics.includes('memory')) {
         metrics.memory_usage_mb = await this.getMemoryUsage(processId);
       }
 
-      // I/O統計の測定
+      // Measure I/O statistics
       if (!includeMetrics || includeMetrics.includes('io')) {
         const ioStats = await this.getIoStats(processId);
         metrics.io_read_bytes = ioStats.read_bytes;
         metrics.io_write_bytes = ioStats.write_bytes;
       }
 
-      // ネットワーク統計の測定
+      // Measure network statistics
       if (!includeMetrics || includeMetrics.includes('network')) {
         const networkStats = await this.getNetworkStats(processId);
         metrics.network_rx_bytes = networkStats.rx_bytes;
         metrics.network_tx_bytes = networkStats.tx_bytes;
       }
 
-      // メトリクスの保存
+      // Store metrics
       this.storeProcessMetrics(processId, metrics);
 
-      // 監視情報の更新
+      // Update monitor information
       monitor.metrics = metrics;
       monitor.last_update = getCurrentTimestamp();
       this.monitors.set(monitorId, monitor);
     } catch (error) {
-      // エラーログを内部ログに記録（標準出力を避ける）
+      // Record error to internal log (avoid stdout)
       // console.error(`Failed to collect metrics for process ${processId}:`, error);
 
-      // エラーの場合は監視を停止
+      // Stop monitoring on error
       this.stopProcessMonitor(monitorId);
     }
   }
 
   private async getCpuUsage(processId: number): Promise<number> {
     try {
-      // プラットフォーム固有のCPU使用率取得
+      // Platform-specific CPU usage retrieval
       if (process.platform === 'linux') {
         return await this.getLinuxCpuUsage(processId);
       } else if (process.platform === 'darwin') {
         return await this.getMacOsCpuUsage(processId);
       } else {
-        return 0; // Windows等では簡易実装
+        return 0; // Simplified implementation for Windows, etc.
       }
     } catch {
       return 0;
@@ -173,7 +173,7 @@ export class MonitoringManager {
 
       const { stdout } = await execAsync(`ps -p ${processId} -o rss --no-headers`);
       const rssKb = parseInt(stdout.trim()) || 0;
-      return rssKb / 1024; // MB に変換
+      return rssKb / 1024; // convert to MB
     } catch {
       return 0;
     }
@@ -189,7 +189,7 @@ export class MonitoringManager {
       const lines = stdout.trim().split('\n');
       if (lines.length > 1 && lines[1]) {
         const rssKb = parseInt(lines[1].trim()) || 0;
-        return rssKb / 1024; // MB に変換
+        return rssKb / 1024; // convert to MB
       }
       return 0;
     } catch {
@@ -219,7 +219,7 @@ export class MonitoringManager {
         return { read_bytes: readBytes, write_bytes: writeBytes };
       }
     } catch {
-      // エラーの場合はデフォルト値
+      // Return default values on error
     }
 
     return { read_bytes: 0, write_bytes: 0 };
@@ -228,7 +228,7 @@ export class MonitoringManager {
   private async getNetworkStats(
     _processId: number
   ): Promise<{ rx_bytes: number; tx_bytes: number }> {
-    // ネットワーク統計の取得は複雑なので、今回は簡易実装
+    // Network stats collection is complex; using a simplified implementation here
     return { rx_bytes: 0, tx_bytes: 0 };
   }
 
@@ -241,7 +241,7 @@ export class MonitoringManager {
     if (metricsHistory) {
       metricsHistory.push(metrics);
 
-      // 履歴サイズの制限
+      // Limit history size
       if (metricsHistory.length > this.maxMetricsHistory) {
         metricsHistory.shift();
       }
@@ -254,14 +254,14 @@ export class MonitoringManager {
       throw new ResourceNotFoundError('monitor', monitorId);
     }
 
-    // インターバルを停止
+    // Stop the interval
     const interval = this.intervals.get(monitorId);
     if (interval) {
       clearInterval(interval);
       this.intervals.delete(monitorId);
     }
 
-    // 監視状態を更新
+    // Update monitoring status
     monitor.status = 'stopped';
     monitor.last_update = getCurrentTimestamp();
     this.monitors.set(monitorId, monitor);
@@ -283,12 +283,12 @@ export class MonitoringManager {
 
   getSystemStats(_timeRangeMinutes = 60): SystemStats {
     const systemInfo = getSystemInfo();
-    // const processInfo = getProcessInfo(); // 現在未使用
+    // const processInfo = getProcessInfo(); // currently unused
 
     const stats: SystemStats = {
       active_processes: this.getActiveProcessCount(),
-      active_terminals: 0, // TerminalManagerから取得する必要がある
-      total_files: 0, // FileManagerから取得する必要がある
+      active_terminals: 0, // needs to be obtained from TerminalManager
+      total_files: 0, // needs to be obtained from FileManager
       system_load: {
         load1: systemInfo.loadavg[0] || 0,
         load5: systemInfo.loadavg[1] || 0,
@@ -298,7 +298,7 @@ export class MonitoringManager {
         total_mb: Math.round(systemInfo.totalmem / 1024 / 1024),
         used_mb: Math.round((systemInfo.totalmem - systemInfo.freemem) / 1024 / 1024),
         free_mb: Math.round(systemInfo.freemem / 1024 / 1024),
-        available_mb: Math.round(systemInfo.freemem / 1024 / 1024), // 簡易実装
+        available_mb: Math.round(systemInfo.freemem / 1024 / 1024), // simplified implementation
       },
       uptime_seconds: Math.round(systemInfo.uptime),
       collected_at: getCurrentTimestamp(),
@@ -313,27 +313,27 @@ export class MonitoringManager {
   }
 
   private startSystemMonitoring(): void {
-    // 5分ごとにシステム統計を収集
+    // Collect system statistics every 5 minutes
     this.systemMonitoringInterval = setInterval(
       () => {
         try {
-          // 将来的にはシステム統計をログファイルに保存
+          // In future, write system stats to a log file
           const stats = this.getSystemStats();
           this.logSystemStats(stats);
         } catch (error) {
-          // エラーログを内部ログに記録（標準出力を避ける）
+          // Record error to internal log (avoid stdout)
           // console.error('Failed to collect system stats:', error);
         }
       },
       5 * 60 * 1000
     );
 
-    // 終了処理を阻害しないようにする
+    // Prevent interfering with shutdown
     this.systemMonitoringInterval.unref?.();
   }
 
   private logSystemStats(_stats: SystemStats): void {
-    // 将来的にはログファイルに出力（標準出力を避ける）
+    // In future, output to a log file (avoid stdout)
     // console.log(`[${stats.collected_at}] System Stats:`, {
     //   processes: stats.active_processes,
     //   load: stats.system_load.load1,
@@ -347,12 +347,12 @@ export class MonitoringManager {
       this.systemMonitoringInterval = null;
     }
 
-    // 全ての監視を停止
+    // Stop all monitors
     for (const monitorId of this.monitors.keys()) {
       try {
         this.stopProcessMonitor(monitorId);
       } catch (error) {
-        // エラーログを内部ログに記録（標準出力を避ける）
+        // Record error to internal log (avoid stdout)
         // console.error(`Failed to stop monitor ${monitorId}:`, error);
       }
     }

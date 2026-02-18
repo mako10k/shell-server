@@ -1,6 +1,6 @@
 /**
- * Issue #13: FileManager Subscriber実装
- * 既存のFileManagerをStreamSubscriberパターンに拡張
+ * Issue #13: FileManager Subscriber implementation
+ * Extend existing FileManager with a StreamSubscriber pattern
  */
 
 import { StreamSubscriber } from './stream-publisher.js';
@@ -10,8 +10,8 @@ import * as path from 'path';
 import { generateId, getCurrentTimestamp } from '../utils/helpers.js';
 
 /**
- * FileManager の Subscriber ラッパー
- * プロセス出力をファイルに保存するSubscriber
+ * Subscriber wrapper for FileManager
+ * Subscriber that saves process output to files
  */
 export class FileStorageSubscriber implements StreamSubscriber {
   public readonly id: string;
@@ -26,7 +26,7 @@ export class FileStorageSubscriber implements StreamSubscriber {
   }
 
   async onProcessStart(executionId: string, _command: string): Promise<void> {
-    // 出力ファイルのパスを準備
+    // Prepare output file paths
     const timestamp = getCurrentTimestamp().replace(/[:.]/g, '-');
     const stdoutPath = path.join(this.baseDir, `${executionId}-stdout-${timestamp}.txt`);
     const stderrPath = path.join(this.baseDir, `${executionId}-stderr-${timestamp}.txt`);
@@ -36,7 +36,7 @@ export class FileStorageSubscriber implements StreamSubscriber {
       stderr: stderrPath,
     });
 
-    // ファイルハンドルを開く（書き込み用）
+    // Open file handles for writing
     try {
       const stdoutHandle = await fs.open(stdoutPath, 'w');
       const stderrHandle = await fs.open(stderrPath, 'w');
@@ -44,7 +44,7 @@ export class FileStorageSubscriber implements StreamSubscriber {
       this.fileStreams.set(`${executionId}-stdout`, stdoutHandle);
       this.fileStreams.set(`${executionId}-stderr`, stderrHandle);
 
-      // FileManagerに登録（まだ0サイズ）
+      // Register with FileManager (initially zero size)
       await this.fileManager.registerFile(stdoutPath, 'stdout', executionId);
       await this.fileManager.registerFile(stderrPath, 'stderr', executionId);
     } catch (error) {
@@ -63,7 +63,7 @@ export class FileStorageSubscriber implements StreamSubscriber {
     if (fileHandle) {
       try {
         await fileHandle.write(data);
-        // すぐにフラッシュして、他のプロセスからも読み取り可能にする
+          // Flush immediately so other processes can read
         await fileHandle.sync();
       } catch (error) {
         console.error(`FileStorageSubscriber: Failed to write data for ${executionId}:`, error);
@@ -72,7 +72,7 @@ export class FileStorageSubscriber implements StreamSubscriber {
   }
 
   async onProcessEnd(executionId: string, _exitCode: number | null): Promise<void> {
-    // ファイルハンドルを閉じる
+    // Close file handles
     const stdoutHandle = this.fileStreams.get(`${executionId}-stdout`);
     const stderrHandle = this.fileStreams.get(`${executionId}-stderr`);
 
@@ -87,7 +87,7 @@ export class FileStorageSubscriber implements StreamSubscriber {
         this.fileStreams.delete(`${executionId}-stderr`);
       }
 
-      // FileManagerの情報を更新（最終ファイルサイズなど）
+      // Update FileManager info (final file sizes, etc.)
       const filePaths = this.filePaths.get(executionId);
       if (filePaths) {
         await this.updateFileManagerInfo(executionId, filePaths);
@@ -99,10 +99,10 @@ export class FileStorageSubscriber implements StreamSubscriber {
   }
 
   async onError(executionId: string, error: Error): Promise<void> {
-    // エラー時もファイルを適切に閉じる
+    // Ensure files are properly closed on error
     await this.onProcessEnd(executionId, -1);
 
-    // エラーログを stderr ファイルに書き込む
+    // Write error log to the stderr file
     const filePaths = this.filePaths.get(executionId);
     if (filePaths) {
       try {
@@ -115,18 +115,18 @@ export class FileStorageSubscriber implements StreamSubscriber {
   }
 
   /**
-   * FileManagerの情報を最終的なファイルサイズで更新
+   * Update FileManager info with final file sizes
    */
   private async updateFileManagerInfo(
     executionId: string,
     filePaths: { stdout: string; stderr: string }
   ): Promise<void> {
     try {
-      // ファイルサイズを取得してFileManagerを更新
-      // この部分は FileManager の内部実装に依存するため、
-      // FileManager に updateFileSize メソッドを追加する必要があるかもしれません
+      // Obtain file sizes and update FileManager
+      // This part depends on FileManager internals;
+      // may need to add an updateFileSize method to FileManager.
 
-      // 現在は console.error でログ出力のみ
+      // Currently only logs via console.error
       const stdoutStat = await fs.stat(filePaths.stdout);
       const stderrStat = await fs.stat(filePaths.stderr);
 
@@ -139,14 +139,14 @@ export class FileStorageSubscriber implements StreamSubscriber {
   }
 
   /**
-   * 指定された実行の出力ファイルパスを取得
+   * Get output file paths for the specified execution
    */
   getFilePaths(executionId: string): { stdout: string; stderr: string } | undefined {
     return this.filePaths.get(executionId);
   }
 
   /**
-   * アクティブなファイルストリーム数を取得（デバッグ用）
+   * Get active file stream count (for debugging)
    */
   getActiveStreamsCount(): number {
     return this.fileStreams.size;

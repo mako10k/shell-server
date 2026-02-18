@@ -155,7 +155,7 @@ export class ShellTools {
       this.securityManager.auditCommand(params.command, params.working_directory);
       this.securityManager.validateExecutionTime(params.timeout_seconds);
 
-      // foreground_timeout_secondsの最大値チェック
+      // Check max value for foreground_timeout_seconds
       if (
         params.execution_mode === 'foreground' &&
         typeof params.foreground_timeout_seconds === 'number' &&
@@ -178,7 +178,7 @@ export class ShellTools {
         returnPartialOnTimeout: params.return_partial_on_timeout,
       };
 
-      // オプショナルなプロパティを追加（undefinedでない場合のみ）
+      // Add optional properties (only if not undefined)
       if (params.working_directory !== undefined) {
         executionOptions.workingDirectory = params.working_directory;
       }
@@ -625,7 +625,7 @@ export class ShellTools {
     try {
       let stats = this.monitoringManager.getSystemStats(params.time_range_minutes);
 
-      // 要求されたメトリクスのみを含める
+      // Include only requested metrics
       if (params.include_metrics) {
         const filteredStats: Record<string, unknown> = {
           collected_at: stats.collected_at,
@@ -681,7 +681,7 @@ export class ShellTools {
     }
   }
 
-  // Issue #15: クリーンアップ提案機能
+  // Issue #15: Cleanup suggestions feature
   async getCleanupSuggestions(params?: CleanupSuggestionsParams) {
     try {
       const options: Parameters<typeof this.fileManager.getCleanupSuggestions>[0] = {};
@@ -697,7 +697,7 @@ export class ShellTools {
     }
   }
 
-  // Issue #15: 自動クリーンアップ実行機能
+  // Issue #15: Auto cleanup execution feature
   async performAutoCleanup(params?: AutoCleanupParams) {
     try {
       const options: Parameters<typeof this.fileManager.performAutoCleanup>[0] = {};
@@ -713,7 +713,7 @@ export class ShellTools {
     }
   }
 
-  // 統合ターミナル操作 (create + send_input + get_output を統合)
+  // Unified terminal operation (combine create + send_input + get_output)
   async terminalOperate(params: TerminalOperateParams) {
     try {
       let terminalId = params.terminal_id;
@@ -730,13 +730,13 @@ export class ShellTools {
         foreground_process?: unknown;
       } | null = null;
 
-      // 1. ターミナルの準備 (新規作成 or 既存利用)
+      // 1. Prepare terminal (create new or use existing)
       if (!terminalId) {
         if (!params.command) {
           throw new Error('Either terminal_id or command must be provided');
         }
 
-        // 新規ターミナル作成
+        // Create new terminal
         const createOptions: TerminalOptions = {
           shellType: params.shell_type || 'bash',
           dimensions: params.dimensions || { width: 120, height: 30 },
@@ -749,7 +749,7 @@ export class ShellTools {
         terminalInfo = await this.terminalManager.createTerminal(createOptions);
         terminalId = terminalInfo.terminal_id;
 
-        // 作成後にコマンドを自動実行
+        // Auto-execute command after creation
         if (params.command) {
           await this.terminalManager.sendInput(
             terminalId,
@@ -761,10 +761,10 @@ export class ShellTools {
           );
         }
       } else {
-        // 既存ターミナル使用
+        // Use existing terminal
         terminalInfo = await this.terminalManager.getTerminal(terminalId);
 
-        // dimensionsが指定されている場合、現在のサイズと比較してリサイズ
+        // If dimensions specified, compare with current size and resize
         if (params.dimensions) {
           const currentDimensions = terminalInfo.dimensions;
           const newDimensions = params.dimensions;
@@ -773,25 +773,25 @@ export class ShellTools {
             currentDimensions.width !== newDimensions.width ||
             currentDimensions.height !== newDimensions.height
           ) {
-            // サイズが異なる場合はリサイズ実行
+            // Resize if dimensions differ
             await this.terminalManager.resizeTerminal(terminalId, newDimensions);
-            // 最新のターミナル情報を再取得
+            // Re-fetch latest terminal info
             terminalInfo = await this.terminalManager.getTerminal(terminalId);
           }
         }
 
-        // inputまたはcommandが指定されていれば送信（未読出力チェック付き）
+        // If input or command specified, send it (with unread output check)
         const inputToSend = params.input || params.command;
         if (typeof inputToSend === 'string' && inputToSend.length > 0) {
-          // 制御コード送信時は自動的にforce_inputをtrueにする（Ctrl+C等の緊急操作のため）
+          // When sending control codes, automatically set force_input=true (for urgent operations like Ctrl+C)
           const effectiveForceInput = params.force_input || params.control_codes;
 
-          // 未読出力チェック（force_inputまたはcontrol_codesがfalseの場合のみ）
+          // Unread output check (only when force_input and control_codes are false)
           if (!effectiveForceInput) {
             const unreadCheck = await this.terminalManager.getOutput(
               terminalId,
-              undefined, // start_lineはデフォルト（連続読み取り）
-              1000, // 大きめの値で未読データを全取得
+              undefined, // start_line is default (continuous read)
+              1000, // use a large value to fetch all unread data
               params.include_ansi || false,
               false // include_foreground_process
             );
@@ -803,31 +803,31 @@ export class ShellTools {
             }
           }
 
-          // 制約に引っかからなかった場合のみ入力送信
+          // Only send input if not rejected by restrictions
           if (!inputRejected) {
-            await this.terminalManager.sendInput(
-              terminalId,
-              inputToSend,
-              params.execute !== false, // デフォルトtrue
-              params.control_codes || false,
-              false, // raw_bytes
-              params.send_to // program guard
-            );
+              await this.terminalManager.sendInput(
+                terminalId,
+                inputToSend,
+                params.execute !== false, // default true
+                params.control_codes || false,
+                false, // raw_bytes
+                params.send_to // program guard
+              );
           }
         }
       }
 
-      // 2. 遅延処理（コマンド完了待ち）
+      // 2. Delay handling (wait for command completion)
       if (params.output_delay_ms > 0) {
         await new Promise((resolve) => setTimeout(resolve, params.output_delay_ms));
       }
 
-      // 3. 出力取得
+      // 3. Retrieve output
       let output = null;
       if (params.get_output !== false) {
         const outputResult = await this.terminalManager.getOutput(
           terminalId,
-          undefined, // start_lineはデフォルト（連続読み取り）
+          undefined, // start_line is default (continuous read)
           params.output_lines || 20,
           params.include_ansi || false,
           false // include_foreground_process
@@ -835,13 +835,13 @@ export class ShellTools {
         output = outputResult;
       }
 
-      // 4. レスポンス構築
-      const response: Record<string, unknown> = {
+      // 4. Build response
+        const response: Record<string, unknown> = {
         terminal_id: terminalId,
-        success: !inputRejected, // 入力が拒否された場合はfalse
+        success: !inputRejected, // false if input was rejected
       };
 
-      // 入力拒否情報を追加
+      // Add input rejection info
       if (inputRejected) {
         response['input_rejected'] = true;
         response['reason'] = rejectionReason;
@@ -872,7 +872,7 @@ export class ShellTools {
         };
       }
 
-      // 応答レベルに応じて情報を調整
+      // Adjust response according to response_level
       if (params.response_level === 'minimal') {
         return {
           terminal_id: terminalId,
@@ -880,7 +880,7 @@ export class ShellTools {
           output: output?.output || null,
         };
       } else if (params.response_level === 'full') {
-        // フル情報を含める（すでにresponseに含まれている）
+        // Include full information (already part of response)
       }
 
       return response;

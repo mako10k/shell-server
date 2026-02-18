@@ -1,6 +1,6 @@
-/**
+/*
  * Issue #13: Streaming Pipeline Reader
- * 実行中プロセスの出力をリアルタイムで読み取り、次のプロセスのSTDINに流すためのStream
+ * Read output from running processes in real time and stream into the next process's STDIN
  */
 
 import { Readable } from 'stream';
@@ -8,20 +8,20 @@ import { FileManager } from './file-manager.js';
 import { RealtimeStreamSubscriber } from './realtime-stream-subscriber.js';
 
 interface StreamingPipelineOptions {
-  /** 読み取りタイムアウト（ミリ秒）*/
+  /** Read timeout (ms) */
   readTimeout?: number;
 
-  /** バッファサイズ（バイト）*/
+  /** Buffer size (bytes) */
   bufferSize?: number;
 
-  /** ポーリング間隔（ミリ秒）*/
+  /** Polling interval (ms) */
   pollingInterval?: number;
 }
 
 /**
- * input_output_idが実行中プロセスの場合に使用するStreamingリーダー
- * 1. まずFileの既存内容を読み取り
- * 2. File末尾到達後、RealtimeStreamからリアルタイムデータを取得
+ * Streaming reader used when input_output_id refers to a running process
+ * 1. First read existing file contents
+ * 2. After reaching EOF, obtain real-time data from the RealtimeStream
  */
 export class StreamingPipelineReader extends Readable {
   private fileManager: FileManager;
@@ -51,7 +51,7 @@ export class StreamingPipelineReader extends Readable {
     this.outputId = outputId;
     this.executionId = executionId;
     this.options = {
-      readTimeout: 30000, // 30秒
+      readTimeout: 30000, // 30 seconds
       bufferSize: 8192,
       pollingInterval: 100, // 100ms
       ...options,
@@ -67,7 +67,7 @@ export class StreamingPipelineReader extends Readable {
       return;
     }
 
-    // 既に読み取りタイマーが動いている場合はスキップ
+    // Skip if a read timer is already running
     if (this.readTimer) {
       return;
     }
@@ -76,7 +76,7 @@ export class StreamingPipelineReader extends Readable {
   }
 
   /**
-   * 読み取り処理を開始
+   * Start the read processing
    */
   private startReading(): void {
     this.readTimer = setInterval(async () => {
@@ -88,7 +88,7 @@ export class StreamingPipelineReader extends Readable {
       }
     }, this.options.pollingInterval);
 
-    // タイムアウト設定
+    // Set timeout
     setTimeout(() => {
       if (!this.isDestroyed && this.readTimer) {
         console.error(`StreamingPipelineReader: Read timeout for ${this.outputId}`);
@@ -98,20 +98,20 @@ export class StreamingPipelineReader extends Readable {
   }
 
   /**
-   * 実際の読み取り処理
+   * Perform the actual read operation
    */
   private async performRead(): Promise<void> {
     if (!this.isFileComplete) {
-      // Phase 1: Fileから既存データを読み取り
+      // Phase 1: Read existing data from file
       await this.readFromFile();
     } else {
-      // Phase 2: RealtimeStreamからデータを読み取り
+      // Phase 2: Read data from RealtimeStream
       await this.readFromStream();
     }
   }
 
   /**
-   * Phase 1: Fileから既存データを読み取り
+   * Phase 1: Read existing data from file
    */
   private async readFromFile(): Promise<void> {
     try {
@@ -123,30 +123,30 @@ export class StreamingPipelineReader extends Readable {
       );
 
       if (result.content && result.content.length > 0) {
-        // データがある場合は読み取り位置を更新
+        // If data is present, update the read position
         this.filePosition += Buffer.byteLength(result.content, 'utf-8');
         this.push(result.content);
         console.error(
           `StreamingPipelineReader: Read ${result.content.length} chars from file position ${this.filePosition - result.content.length}`
         );
       } else {
-        // ファイルの末尾に到達 - プロセスが終了しているかチェック
+        // Reached EOF - check whether the process has ended
         const streamState = this.realtimeSubscriber.getStreamState(this.executionId);
         if (streamState && !streamState.isActive) {
-          // プロセスが終了している場合は読み取り完了
+          // If the process has finished, reading is complete
           console.error(
             `StreamingPipelineReader: Process ${this.executionId} completed, file reading finished`
           );
           this.push(null); // EOF
           this.cleanup();
         } else {
-          // プロセスがまだ実行中の場合は、Streamモードに移行
+          // If the process is still running, switch to stream mode
           console.error(
             `StreamingPipelineReader: File EOF reached, switching to stream mode for ${this.outputId}`
           );
           this.isFileComplete = true;
 
-          // Fileに保存された最後のシーケンス番号を特定
+          // Identify the last sequence number saved to the file
           if (streamState) {
             // 最新のバッファから最後に保存されたシーケンス番号を推定
             const latestBuffers = this.realtimeSubscriber.getLatestBuffers(this.executionId, 10);
@@ -164,7 +164,7 @@ export class StreamingPipelineReader extends Readable {
   }
 
   /**
-   * Phase 2: RealtimeStreamからデータを読み取り
+   * Phase 2: Read data from RealtimeStream
    */
   private async readFromStream(): Promise<void> {
     const streamState = this.realtimeSubscriber.getStreamState(this.executionId);
@@ -175,7 +175,7 @@ export class StreamingPipelineReader extends Readable {
       return;
     }
 
-    // 最後に読み取ったシーケンス番号以降のバッファを取得
+    // Fetch buffers after the last read sequence number
     const newBuffers = this.realtimeSubscriber.getBuffersFromSequence(
       this.executionId,
       this.lastSequenceNumber + 1,
@@ -192,7 +192,7 @@ export class StreamingPipelineReader extends Readable {
       }
     }
 
-    // プロセスが終了していて、新しいバッファもない場合は完了
+    // If the process has ended and there are no new buffers, finish
     if (!streamState.isActive && newBuffers.length === 0) {
       console.error(`StreamingPipelineReader: Stream completed for ${this.executionId}`);
       this.push(null); // EOF
@@ -201,7 +201,7 @@ export class StreamingPipelineReader extends Readable {
   }
 
   /**
-   * ファイルに保存済みの最後のシーケンス番号を推定
+   * Estimate the last sequence number that has been saved to the file
    */
   private estimateLastFileSequence(
     latestBuffers: Array<{ data: string; sequenceNumber: number }>
@@ -222,7 +222,7 @@ export class StreamingPipelineReader extends Readable {
   }
 
   /**
-   * リソースのクリーンアップ
+   * Cleanup resources
    */
   private cleanup(): void {
     if (this.readTimer) {
