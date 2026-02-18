@@ -22,6 +22,17 @@ All notable changes to this project are documented in this file.
 ### Notes
 - リリース時の補足（移行手順、既知の制約など）
 
+## [0.2.3] - 2026-02-18
+
+### Fixed
+- `createMessageCallbackFromMCPServer` で MCP SDK のレスポンス `content` が配列/非テキストを含む union 型でも安全にテキスト抽出できるよう修正し、`prepublishOnly` ビルドエラーを解消。
+
+### Security
+- `npm audit` で検出された脆弱性（high/moderate）を解消。
+
+### Dependencies
+- `@modelcontextprotocol/sdk` を `^1.26.0` へ更新し、関連依存 (`ajv` など) を脆弱性修正版へ追随。
+
 ## [0.2.2] - 2026-02-18
 
 ### Fixed
