@@ -3,7 +3,7 @@ import { z } from 'zod';
 // Enhanced Security Configuration for MCP Shell Server Safety Features
 // Based on the requirements specification in docs/new_requirements.md
 
-// 安全性レベル (1=最も安全, 5=最も危険)
+// Safety levels (1 = safest, 5 = most dangerous)
 export const SafetyLevelSchema = z
   .number()
   .int()
@@ -12,14 +12,14 @@ export const SafetyLevelSchema = z
   .describe('Safety level from 1 (safest) to 5 (most dangerous)');
 export type SafetyLevel = z.infer<typeof SafetyLevelSchema>;
 
-// 評価結果 (Tool-based evaluation system)
+// Evaluation results (Tool-based evaluation system)
 export const EvaluationResultSchema = z
   .enum(['allow', 'deny', 'add_more_history', 'user_confirm', 'ai_assistant_confirm'])
   .describe('Tool-based evaluation result for security assessment');
 
 export type EvaluationResult = z.infer<typeof EvaluationResultSchema>;
 
-// 従来のLLM評価結果スキーマ (backward compatibility - 統一されました)
+// Legacy LLM evaluation result schema (backward compatibility - unified)
 export const SimplifiedLLMEvaluationResultSchema = z.object({
   evaluation_result: EvaluationResultSchema,
   reasoning: z.string(),
@@ -34,7 +34,7 @@ export const SimplifiedLLMEvaluationResultSchema = z.object({
 
 export type SimplifiedLLMEvaluationResult = z.infer<typeof SimplifiedLLMEvaluationResultSchema>;
 
-// コマンド分類
+// Command classification
 export const CommandClassificationSchema = z
   .enum(['basic_safe', 'llm_required'])
   .describe('Command safety classification');
@@ -43,7 +43,7 @@ export type CommandClassification = z.infer<typeof CommandClassificationSchema>;
 // Enhanced Security Configuration
 export const EnhancedSecurityConfigSchema = z
   .object({
-    // 機能切り替え (LLM中心設計)
+    // Feature toggles (LLM-centric design)
     enhanced_mode_enabled: z.boolean().default(true).describe('Enable enhanced security features'),
     basic_safe_classification: z
       .boolean()
@@ -61,7 +61,7 @@ export const EnhancedSecurityConfigSchema = z
         'Enable pattern-based pre-filtering (default: false - all commands go to LLM evaluation)'
       ),
 
-    // LLM中心設計用の設定
+    // Settings for LLM-centric design
     disable_algorithmic_preprocessing: z
       .boolean()
       .default(true)
@@ -78,7 +78,7 @@ export const EnhancedSecurityConfigSchema = z
       .default(true)
       .describe('Allow LLM to request command output summaries for context'),
 
-    // 履歴管理
+    // History management
     command_history_enhanced: z
       .boolean()
       .default(true)
@@ -98,7 +98,7 @@ export const EnhancedSecurityConfigSchema = z
       .default(1000)
       .describe('Maximum number of history entries to keep'),
 
-    // LLM設定
+    // LLM settings
     llm_provider: z
       .enum(['openai', 'anthropic', 'custom'])
       .default('openai')
@@ -113,7 +113,7 @@ export const EnhancedSecurityConfigSchema = z
       .default(3)
       .describe('LLM evaluation timeout in seconds'),
 
-    // 学習機能
+    // Learning features
     enable_resubmission_learning: z
       .boolean()
       .default(true)
@@ -126,7 +126,7 @@ export const EnhancedSecurityConfigSchema = z
       .default(3)
       .describe('Maximum resubmission attempts'),
 
-    // 安全性閾値
+    // Safety thresholds
     safety_level_thresholds: z
       .object({
         require_confirmation: z
@@ -150,7 +150,7 @@ export const EnhancedSecurityConfigSchema = z
 
 export type EnhancedSecurityConfig = z.infer<typeof EnhancedSecurityConfigSchema>;
 
-// コマンド履歴エントリ (拡張版)
+// Command history entry (extended)
 export const CommandHistoryEntrySchema = z
   .object({
     execution_id: z.string().describe('Unique execution identifier'),
@@ -158,7 +158,7 @@ export const CommandHistoryEntrySchema = z
     timestamp: z.string().describe('Execution timestamp'),
     working_directory: z.string().describe('Working directory at execution time'),
 
-    // 評価結果（新規）
+    // Evaluation result (new)
     safety_classification: CommandClassificationSchema.optional().describe(
       'Basic safety classification'
     ),
@@ -166,7 +166,7 @@ export const CommandHistoryEntrySchema = z
     evaluation_reasoning: z.string().optional().describe('Reasoning for the evaluation'),
     denial_context: z.string().optional().describe('Context and suggestions for denied commands'),
 
-    // ユーザ確認履歴（新規）
+    // User confirmation history (new)
     user_confirmation_context: z
       .object({
         prompt: z.string().describe('Confirmation prompt shown to user'),
@@ -184,7 +184,7 @@ export const CommandHistoryEntrySchema = z
       .optional()
       .describe('User confirmation context if confirmation was required'),
 
-    // 実行結果
+    // Execution results
     was_executed: z.boolean().describe('Whether the command was actually executed'),
     execution_status: z.string().optional().describe('Execution status if executed'),
     resubmission_count: z
@@ -199,7 +199,7 @@ export const CommandHistoryEntrySchema = z
 
 export type CommandHistoryEntry = z.infer<typeof CommandHistoryEntrySchema>;
 
-// ユーザ確認パターン
+// User confirmation patterns
 export const UserConfirmationPatternSchema = z
   .object({
     command_pattern: z.string().describe('Command pattern regex or semantic description'),
@@ -215,7 +215,7 @@ export const UserConfirmationPatternSchema = z
 
 export type UserConfirmationPattern = z.infer<typeof UserConfirmationPatternSchema>;
 
-// 基本安全分類ルール
+// Basic safety classification rules
 export const BasicSafetyRuleSchema = z
   .object({
     pattern: z.string().describe('Regular expression pattern'),
@@ -228,10 +228,10 @@ export const BasicSafetyRuleSchema = z
 
 export type BasicSafetyRule = z.infer<typeof BasicSafetyRuleSchema>;
 
-// 設定ファイル全体の型定義
+// Overall configuration type definitions
 export const ShellServerConfigSchema = z
   .object({
-    // 既存の設定は維持
+    // Preserve existing settings
     server: z
       .object({
         name: z.string().default('MCP Shell Server'),
@@ -239,10 +239,10 @@ export const ShellServerConfigSchema = z
       })
       .optional(),
 
-    // 新規: Enhanced Security設定
+    // New: Enhanced Security settings
     enhanced_security: EnhancedSecurityConfigSchema.optional(),
 
-    // 新規: 基本安全分類ルール
+    // New: Basic safety classification rules
     basic_safety_rules: z
       .array(BasicSafetyRuleSchema)
       .optional()
@@ -252,13 +252,13 @@ export const ShellServerConfigSchema = z
 
 export type ShellServerConfig = z.infer<typeof ShellServerConfigSchema>;
 
-// デフォルト設定 (LLM中心設計)
+// Default settings (LLM-centric design)
 export const DEFAULT_ENHANCED_SECURITY_CONFIG: EnhancedSecurityConfig = {
-  enhanced_mode_enabled: true,  // Enhanced Evaluatorを使用するため有効化
+  enhanced_mode_enabled: true,  // Enable to use the Enhanced Evaluator
   basic_safe_classification: true,
-  llm_evaluation_enabled: true, // LLM中心設計: デフォルトでLLM評価有効
-  elicitation_enabled: true, // LLM中心設計: デフォルトでElicitation有効
-  enable_pattern_filtering: false, // LLM中心設計: デフォルトで全コマンドLLM評価
+  llm_evaluation_enabled: true, // LLM-centric: LLM evaluation enabled by default
+  elicitation_enabled: true, // LLM-centric: elicitation enabled by default
+  enable_pattern_filtering: false, // LLM-centric: default is to send all commands to LLM evaluation
   disable_algorithmic_preprocessing: true,
   max_additional_history_for_context: 20,
   enable_command_output_context: true,
@@ -277,9 +277,9 @@ export const DEFAULT_ENHANCED_SECURITY_CONFIG: EnhancedSecurityConfig = {
   },
 };
 
-// デフォルト基本安全ルール (限定的な安全コマンドのみ)
+// Default basic safety rules (restrictive list of safe commands only)
 export const DEFAULT_BASIC_SAFETY_RULES: BasicSafetyRule[] = [
-  // 表示・確認系（引数制限あり）
+  // Display/inspection commands (argument-restricted)
   {
     pattern: '^ls(\\s+-[lart]*)?(\\s+[^|>;&]+)?$',
     reasoning: 'Directory listing',
@@ -289,7 +289,7 @@ export const DEFAULT_BASIC_SAFETY_RULES: BasicSafetyRule[] = [
   { pattern: '^whoami$', reasoning: 'Current user', safety_level: 1 },
   { pattern: '^date(\\s+-[^|>;&]+)?$', reasoning: 'Date display', safety_level: 1 },
 
-  // ファイル内容表示（リダイレクト無し）
+  // File content display (no redirects)
   { pattern: '^cat\\s+[^|>;&]+$', reasoning: 'File content display', safety_level: 1 },
   {
     pattern: '^head(\\s+-n\\s*\\d+)?\\s+[^|>;&]+$',
@@ -302,7 +302,7 @@ export const DEFAULT_BASIC_SAFETY_RULES: BasicSafetyRule[] = [
     safety_level: 1,
   },
 
-  // 検索・フィルタ（基本形のみ）
+  // Search/filter (basic forms only)
   { pattern: '^grep\\s+[^|>;&]+\\s+[^|>;&]+$', reasoning: 'Simple grep search', safety_level: 1 },
   { pattern: '^wc(\\s+-[lwc])?\\s+[^|>;&]+$', reasoning: 'Word count', safety_level: 1 },
   { pattern: '^which\\s+[a-zA-Z0-9_-]+$', reasoning: 'Command location', safety_level: 1 },

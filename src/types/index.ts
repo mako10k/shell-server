@@ -1,30 +1,30 @@
 import { z } from 'zod';
 
-// 実行モード
+// Execution modes
 export const ExecutionModeSchema = z.enum(['foreground', 'background', 'detached', 'adaptive']);
 export type ExecutionMode = z.infer<typeof ExecutionModeSchema>;
 
-// 実行状態
+// Execution status
 const ExecutionStatusSchema = z.enum(['completed', 'running', 'failed', 'timeout']);
 export type ExecutionStatus = z.infer<typeof ExecutionStatusSchema>;
 
-// シェルタイプ
+// Shell types
 export const ShellTypeSchema = z.enum(['bash', 'zsh', 'fish', 'cmd', 'powershell']);
 export type ShellType = z.infer<typeof ShellTypeSchema>;
 
-// ターミナル状態
+// Terminal status
 const TerminalStatusSchema = z.enum(['active', 'idle', 'closed']);
 export type TerminalStatus = z.infer<typeof TerminalStatusSchema>;
 
-// シグナル
+// Signals
 export const ProcessSignalSchema = z.enum(['TERM', 'KILL', 'INT', 'HUP', 'USR1', 'USR2']);
 export type ProcessSignal = z.infer<typeof ProcessSignalSchema>;
 
-// 出力タイプ
+// Output types
 export const OutputTypeSchema = z.enum(['stdout', 'stderr', 'combined', 'log', 'all']);
 export type OutputType = z.infer<typeof OutputTypeSchema>;
 
-// エラーカテゴリ
+// Error categories
 const ErrorCategorySchema = z.enum([
   'AUTH',
   'PARAM',
@@ -35,7 +35,7 @@ const ErrorCategorySchema = z.enum([
 ]);
 export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;
 
-// 基本スキーマ
+// Basic schemas
 export const EnvironmentVariablesSchema = z
   .record(z.string(), z.string())
   .describe('Environment variables');
@@ -49,7 +49,7 @@ export const DimensionsSchema = z
   .describe('Terminal dimensions');
 export type Dimensions = z.infer<typeof DimensionsSchema>;
 
-// 出力切り捨て理由
+// Output truncation reasons
 export type OutputTruncationReason =
   | 'size_limit'
   | 'timeout'
@@ -57,7 +57,7 @@ export type OutputTruncationReason =
   | 'error'
   | 'background_transition';
 
-// 出力状態情報
+// Output status information
 export interface OutputStatus {
   complete: boolean;
   reason?: OutputTruncationReason;
@@ -65,7 +65,7 @@ export interface OutputStatus {
   recommended_action?: string | undefined;
 }
 
-// Issue #14: ガイダンス情報の型定義
+// Issue #14: Guidance information type definitions
 export interface GuidanceInfo {
   pipeline_usage: string;
   suggested_commands: string[];
@@ -75,7 +75,7 @@ export interface GuidanceInfo {
   };
 }
 
-// 実行情報
+// Execution information
 export interface ExecutionInfo {
   execution_id: string;
   command: string;
@@ -91,21 +91,21 @@ export interface ExecutionInfo {
   cpu_usage_percent?: number;
   stdout?: string;
   stderr?: string;
-  output_truncated?: boolean; // 後方互換性のため残す
-  output_status?: OutputStatus; // 新しい詳細な出力状態
+  output_truncated?: boolean; // kept for backward compatibility
+  output_status?: OutputStatus; // new detailed output status
   output_id?: string;
   terminal_id?: string;
-  transition_reason?: 'foreground_timeout' | 'output_size_limit'; // adaptive modeでバックグラウンドに移行した理由
-  truncation_reason?: OutputTruncationReason; // 出力切り捨ての具体的理由
-  next_steps?: string[]; // LLMへの推奨アクション
-  message?: string; // 状況説明メッセージ
-  guidance?: GuidanceInfo; // Issue #14: パイプライン処理のガイダンス
+  transition_reason?: 'foreground_timeout' | 'output_size_limit'; // reason for transition to background in adaptive mode
+  truncation_reason?: OutputTruncationReason; // specific reason for output truncation
+  next_steps?: string[]; // recommended actions for LLM
+  message?: string; // status explanation message
+  guidance?: GuidanceInfo; // Issue #14: Pipeline processing guidance
   created_at: string;
   started_at?: string;
   completed_at?: string;
 }
 
-// システムプロセス情報（フォアグラウンドプロセス用）
+// System process info (for foreground processes)
 export interface SystemProcessInfo {
   pid: number;
   name: string;
@@ -115,20 +115,20 @@ export interface SystemProcessInfo {
   parentPid?: number;
 }
 
-// プログラムガード設定
+// Program guard settings
 export const ProgramGuardSchema = z.object({
   sendTo: z.string(), // "bash", "/bin/bash", "pid:12345", "sessionleader:", "*"
 });
 export type ProgramGuard = z.infer<typeof ProgramGuardSchema>;
 
-// フォアグラウンドプロセス情報
+// Foreground process info
 export interface ForegroundProcessInfo {
   process?: SystemProcessInfo;
   available: boolean;
   error?: string;
 }
 
-// ターミナル情報
+// Terminal info
 export interface TerminalInfo {
   terminal_id: string;
   session_name?: string;
@@ -142,7 +142,7 @@ export interface TerminalInfo {
   foreground_process?: ForegroundProcessInfo;
 }
 
-// 出力ファイル情報
+// Output file info
 export interface FileInfo {
   output_id: string;
   output_type: OutputType;
@@ -154,7 +154,7 @@ export interface FileInfo {
   subscribed?: boolean;
 }
 
-// 監視情報
+// Monitor info
 export interface MonitorInfo {
   monitor_id: string;
   process_id: number;
@@ -171,7 +171,7 @@ export interface MonitorInfo {
   };
 }
 
-// システム統計
+// System statistics
 export interface SystemStats {
   active_processes: number;
   active_terminals: number;
@@ -191,7 +191,7 @@ export interface SystemStats {
   collected_at: string;
 }
 
-// エラー情報
+// Error info
 export interface ErrorInfo {
   code: string;
   message: string;
@@ -201,17 +201,17 @@ export interface ErrorInfo {
   request_id?: string;
 }
 
-// セキュリティ制限
+// Security restrictions
 export interface SecurityRestrictions {
   restriction_id: string;
   security_mode: SecurityMode;
 
-  // customモード時のみ有効
+  // only effective in custom mode
   allowed_commands?: string[];
   blocked_commands?: string[];
   allowed_directories?: string[];
 
-  // 共通設定
+  // common settings
   max_execution_time?: number;
   max_memory_mb?: number;
   enable_network?: boolean;
@@ -220,7 +220,7 @@ export interface SecurityRestrictions {
   configured_at: string;
 }
 
-// セキュリティモード
+// Security modes
 export const SecurityModeSchema = z.enum([
   'permissive',
   'moderate',
@@ -231,7 +231,7 @@ export const SecurityModeSchema = z.enum([
 ]);
 export type SecurityMode = z.infer<typeof SecurityModeSchema>;
 
-// 実行プロセス情報（Process Manager用）
+// Execution process info (for Process Manager)
 export interface ExecutionProcessInfo {
   process_id: number;
   execution_id: string;
@@ -251,18 +251,18 @@ export interface ElicitationResult {
   timeout_duration_ms?: number;
   question_asked: string;
   timestamp: string;
-  comment?: string;  // ユーザーからのコメントがあれば含める
+  comment?: string;  // include if user provided a comment
 }
 
 // Safety Evaluation Result Classes
 //
-// 設計原則:
-// 1. 最終応答のみのクラス（user_confirm, add_more_history は除外）
-// 2. 基底クラス + サブクラスによる型安全性
-// 3. ファクトリパターンによる生成
-// 4. 応答生成メソッドによる変換ロジックのカプセル化
+// Design principles:
+// 1. Classes represent final responses only (exclude user_confirm, add_more_history)
+// 2. Type safety via base class + subclasses
+// 3. Use factory pattern for creation
+// 4. Encapsulate conversion logic in response-generation methods
 
-// 基底クラス - 最小共通フィールド
+// Base class - minimal common fields
 export abstract class SafetyEvaluationResult {
   protected reasoning: string;
   protected llm_evaluation_used?: boolean | undefined;
@@ -274,12 +274,12 @@ export abstract class SafetyEvaluationResult {
     this.elicitation_result = elicitationResult;
   }
   
-  // 応答生成メソッド（抽象）
+  // Response generation method (abstract)
   abstract generateToolResponse(): unknown;
   abstract getEvaluationResult(): string;
 }
 
-// 確認プロセス完了後の基底クラス
+// Base class for completed confirmation processes
 export abstract class SafetyEvaluationCompletedResult extends SafetyEvaluationResult {
   protected confirmation_message?: string | undefined;
   protected user_response?: Record<string, unknown> | undefined;
@@ -307,7 +307,7 @@ export abstract class SafetyEvaluationCompletedResult extends SafetyEvaluationRe
   }
 }
 
-// Allow結果クラス - 実行が許可された場合
+// Allow result class - when execution is permitted
 export class SafetyEvaluationAllowResult extends SafetyEvaluationCompletedResult {
   private suggested_alternatives?: string[] | undefined;
   private context_analysis?: unknown;
@@ -342,7 +342,7 @@ export class SafetyEvaluationAllowResult extends SafetyEvaluationCompletedResult
   }
 }
 
-// Deny結果クラス - 実行が拒否された場合
+// Deny result class - when execution is denied
 export class SafetyEvaluationDenyResult extends SafetyEvaluationCompletedResult {
   private suggested_alternatives?: string[] | undefined;
   private next_action?: string | undefined;
@@ -373,7 +373,7 @@ export class SafetyEvaluationDenyResult extends SafetyEvaluationCompletedResult 
   }
 }
 
-// AiAssistantConfirm結果クラス - AI助手確認が必要
+// AiAssistantConfirm result class - AI assistant confirmation required
 export class SafetyEvaluationAiAssistantConfirmResult extends SafetyEvaluationCompletedResult {
   private suggested_alternatives?: string[] | undefined;
   private context_analysis?: unknown;
@@ -418,7 +418,7 @@ export class SafetyEvaluationAiAssistantConfirmResult extends SafetyEvaluationCo
   }
 }
 
-// ファクトリクラス
+// Factory class
 export class SafetyEvaluationResultFactory {
   static createAllow(
     reasoning: string,

@@ -1,8 +1,8 @@
-// 応答形式制御のためのスキーマ
+// Schemas for controlling response formats
 
 import { z } from 'zod';
 
-// 共通の応答レベル制御
+// Common response-level controls
 export const ResponseLevelSchema = z
   .enum(['minimal', 'standard', 'full'])
   .default('standard')
@@ -13,7 +13,7 @@ export const ResponseLevelSchema = z
       'full (complete details, maximum information)'
   );
 
-// 簡潔な出力制御
+// Concise output formatting controls
 export const OutputFormatSchema = z.object({
   response_level: ResponseLevelSchema,
   exclude_metadata: z
@@ -34,7 +34,7 @@ export const OutputFormatSchema = z.object({
     .describe('Return only summary information instead of detailed data'),
 });
 
-// バッチ操作結果の集約
+// Aggregation options for batch operation results
 export const BatchResultFormatSchema = z.object({
   show_individual_results: z
     .boolean()

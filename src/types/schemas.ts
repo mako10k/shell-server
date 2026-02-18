@@ -515,7 +515,7 @@ export const SecuritySetRestrictionsParamsSchema = z.object({
     'Security preset: "permissive" (basic safety only), "restrictive" (read-only commands only), or "custom" (use detailed configuration below)'
   ),
 
-  // customモード時のみ有効 - 他のモードでは無視される
+  // Effective only in custom mode - ignored in other modes
   allowed_commands: z
     .array(z.string())
     .optional()
@@ -535,7 +535,7 @@ export const SecuritySetRestrictionsParamsSchema = z.object({
       'List of allowed directories (custom mode only). Commands cannot access files outside these directories. Use absolute paths like ["/home/user", "/tmp"].'
     ),
 
-  // 全モード共通設定
+  // Settings that apply to all modes
   max_execution_time: z
     .number()
     .int()
@@ -589,7 +589,7 @@ export const ShellSetDefaultWorkdirParamsSchema = z.object({
     ),
 });
 
-// Issue #15: クリーンアップ機能のスキーマ
+// Issue #15: Schema for cleanup features
 export const CleanupSuggestionsParamsSchema = z.object({
   max_size_mb: z
     .number()

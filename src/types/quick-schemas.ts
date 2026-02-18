@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { ResponseLevelSchema } from './response-schemas.js';
 import { ShellTypeSchema, DimensionsSchema } from './index.js';
 
-// よく使用される操作を簡素化
+// Simplify commonly used operations
 
-// 1. クイック実行（最も一般的なパラメータで）
+// 1. Quick execute (with the most common parameters)
 export const QuickExecuteParamsSchema = z.object({
   command: z.string().min(1).describe('Shell command to execute with optimized defaults'),
   directory: z.string().optional().describe('Working directory (shorthand for working_directory)'),
@@ -12,7 +12,7 @@ export const QuickExecuteParamsSchema = z.object({
   response_level: ResponseLevelSchema,
 });
 
-// 2. 統合ターミナル操作 (terminal_create + terminal_send_input + terminal_get_output を統合)
+// 2. Unified terminal operation (combines terminal_create, terminal_send_input, and terminal_get_output)
 export const TerminalOperateParamsSchema = z
   .object({
     // Terminal identification/creation
@@ -101,7 +101,7 @@ export const TerminalOperateParamsSchema = z
     path: ['terminal_id', 'command'],
   });
 
-// 3. システム概要（ダッシュボード的な情報）
+// 3. System overview (dashboard-like information)
 export const SystemDashboardParamsSchema = z.object({
   refresh_stats: z.boolean().default(true).describe('Refresh system statistics'),
   include_recent_activity: z
@@ -118,7 +118,7 @@ export const SystemDashboardParamsSchema = z.object({
   response_level: ResponseLevelSchema,
 });
 
-// 4. ファイル管理簡素化
+// 4. Simplified file management
 export const FileQuickParamsSchema = z.object({
   action: z.enum(['list', 'clean', 'read']).describe('Quick file action'),
   pattern: z.string().optional().describe('File pattern for list/clean operations'),
