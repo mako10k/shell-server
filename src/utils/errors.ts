@@ -67,7 +67,7 @@ export class ShellServerError extends Error {
   }
 }
 
-// 定義済みエラー
+// Predefined errors
 export class ResourceNotFoundError extends ShellServerError {
   constructor(resourceType: string, id: string, requestId?: string) {
     super(

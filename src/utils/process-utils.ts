@@ -8,13 +8,13 @@ export class ProcessUtils {
     number,
     { info: SystemProcessInfo; timestamp: number }
   >();
-  private static readonly CACHE_TTL = 1000; // 1秒のキャッシュ
+  private static readonly CACHE_TTL = 1000; // 1 second cache
 
   /**
-   * プロセス情報を取得する
+   * Retrieve process information
    */
   static async getProcessInfo(pid: number): Promise<SystemProcessInfo | null> {
-    // キャッシュチェック
+    // Check cache
     const cached = this.processInfoCache.get(pid);
     if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
       return cached.info;
@@ -25,12 +25,12 @@ export class ProcessUtils {
       const commPath = `/proc/${pid}/comm`;
       const exePath = `/proc/${pid}/exe`;
 
-      // プロセスが存在するかチェック
+      // Check if process exists
       if (!fs.existsSync(statPath)) {
         return null;
       }
 
-      // /proc/{pid}/stat からセッション情報を取得
+      // Retrieve session information from /proc/{pid}/stat
       const statContent = fs.readFileSync(statPath, 'utf8');
       const statFields = statContent.split(' ');
 
@@ -41,12 +41,12 @@ export class ProcessUtils {
       const sessionId = parseInt(statFields[5] || '0');
       const parentPid = parseInt(statFields[3] || '0');
 
-      // プロセス名を取得
+      // Get process name
       let name = 'unknown';
       try {
         name = fs.readFileSync(commPath, 'utf8').trim();
       } catch {
-        // fallback: stat からプロセス名を抽出
+        // fallback: extract process name from stat
         const procName = statFields[1];
         if (procName) {
           const commMatch = procName.match(/^\((.+)\)$/);
@@ -56,12 +56,12 @@ export class ProcessUtils {
         }
       }
 
-      // フルパスを取得（シンボリックリンクを解決）
+      // Resolve full path (resolve symlink)
       let fullPath: string | undefined;
       try {
         fullPath = fs.readlinkSync(exePath);
       } catch {
-        // パスが取得できない場合は undefined
+        // If path cannot be resolved, leave undefined
       }
 
       const processInfo: SystemProcessInfo = {
@@ -70,7 +70,7 @@ export class ProcessUtils {
         isSessionLeader: sessionId === pid,
       };
 
-      // オプショナルプロパティを追加
+      // Add optional properties
       if (fullPath) {
         processInfo.path = fullPath;
       }
@@ -81,7 +81,7 @@ export class ProcessUtils {
         processInfo.parentPid = parentPid;
       }
 
-      // キャッシュに保存
+      // Save to cache
       this.processInfoCache.set(pid, {
         info: processInfo,
         timestamp: Date.now(),
@@ -95,11 +95,11 @@ export class ProcessUtils {
   }
 
   /**
-   * ターミナルのフォアグラウンドプロセスを取得する
+   * Get the terminal's foreground process
    */
   static async getForegroundProcess(terminalPty: IPty): Promise<ForegroundProcessInfo> {
     try {
-      // pty の file descriptor を取得
+      // Obtain PTY file descriptor
       const ptyWithFd = terminalPty as IPty & { _fd?: number; fd?: number };
       const fd = ptyWithFd._fd || ptyWithFd.fd;
       if (!fd) {
@@ -109,15 +109,15 @@ export class ProcessUtils {
         };
       }
 
-      // tcgetpgrp() の代替として /proc/tty/drivers を使用
-      // まず、pty のデバイス番号を特定
+      // Use /proc/tty/drivers as an alternative to tcgetpgrp()
+      // First, determine the PTY device number
       let foregroundPid: number | null = null;
 
       try {
-        // より直接的なアプローチ: pty のプロセスグループを探す
+        // More direct approach: inspect PTY process group
         const ptyProcess = terminalPty.pid;
         if (ptyProcess) {
-          // 子プロセスを探して、最も最近作成されたものをフォアグラウンドとみなす
+          // Find child processes and treat the most recently created as the foreground
           foregroundPid = await this.findLatestChildProcess(ptyProcess);
         }
       } catch (error) {
@@ -152,7 +152,7 @@ export class ProcessUtils {
   }
 
   /**
-   * 指定されたPIDの最新の子プロセスを見つける
+   * Find the most recently created child process for a given PID
    */
   private static async findLatestChildProcess(parentPid: number): Promise<number | null> {
     try {
@@ -174,14 +174,14 @@ export class ProcessUtils {
 
           const ppid = parseInt(statFields[3] || '0');
           if (ppid === parentPid) {
-            // 子プロセス発見
+            // child process found
             const startTime = parseInt(statFields[21] || '0');
             if (!latestChild || startTime > latestChild.startTime) {
               latestChild = { pid, startTime };
             }
           }
         } catch {
-          // このプロセスはスキップ
+          // skip this process
           continue;
         }
       }
@@ -194,46 +194,46 @@ export class ProcessUtils {
   }
 
   /**
-   * プログラムガードの条件をチェックする
+   * Check program guard conditions
    */
   static checkProgramGuard(processInfo: SystemProcessInfo | undefined, sendTo: string): boolean {
     if (sendTo === '*') {
-      return true; // 条件なし
+      return true; // no condition
     }
 
     if (!processInfo) {
-      return false; // プロセス情報がない場合は拒否
+      return false; // deny if process information is not available
     }
 
-    // セッションリーダーチェック
+    // Session leader check
     if (sendTo === 'sessionleader:' || sendTo === 'loginshell:') {
       return processInfo.isSessionLeader;
     }
 
-    // PIDチェック
+    // PID check
     if (sendTo.startsWith('pid:')) {
       const targetPid = parseInt(sendTo.substring(4));
       return processInfo.pid === targetPid;
     }
 
-    // フルパスチェック
+    // Full path check
     if (sendTo.startsWith('/')) {
       return processInfo.path === sendTo;
     }
 
-    // プロセス名チェック
+    // Process name check
     return processInfo.name === sendTo;
   }
 
   /**
-   * キャッシュをクリアする
+   * Clear the cache
    */
   static clearCache(): void {
     this.processInfoCache.clear();
   }
 
   /**
-   * 古いキャッシュエントリを削除する
+   * Remove stale cache entries
    */
   static cleanupCache(): void {
     const now = Date.now();

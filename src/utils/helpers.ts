@@ -4,27 +4,27 @@ import * as fsSync from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-// ID生成
+// Generate ID
 export function generateId(): string {
   return uuidv4();
 }
 
-// タイムスタンプ生成
+// Generate timestamp
 export function getCurrentTimestamp(): string {
   return new Date().toISOString();
 }
 
-// ファイルパスの検証
+// Validate file path
 export function isValidPath(filePath: string, allowedPaths?: string[]): boolean {
   try {
     const resolvedPath = path.resolve(filePath);
 
-    // 基本的なセキュリティチェック
+    // Basic security checks
     if (resolvedPath.includes('..')) {
       return false;
     }
 
-    // 許可されたパスのチェック
+    // Check allowed paths
     if (allowedPaths && allowedPaths.length > 0) {
       return allowedPaths.some((allowedPath) => resolvedPath.startsWith(path.resolve(allowedPath)));
     }
@@ -35,7 +35,7 @@ export function isValidPath(filePath: string, allowedPaths?: string[]): boolean 
   }
 }
 
-// コマンドの検証
+// Validate command
 export function isValidCommand(
   command: string,
   allowedCommands?: string[],
@@ -47,17 +47,17 @@ export function isValidCommand(
     return false;
   }
 
-  // ブロックされたコマンドのチェック
+  // Check blocked commands
   if (blockedCommands?.includes(commandName)) {
     return false;
   }
 
-  // 許可されたコマンドのチェック
+  // Check allowed commands
   if (allowedCommands && allowedCommands.length > 0) {
     return allowedCommands.includes(commandName);
   }
 
-  // デフォルトで危険なコマンドをブロック
+  // Block dangerous commands by default
   const dangerousCommands = [
     'rm',
     'rmdir',
@@ -81,7 +81,7 @@ export function isValidCommand(
   return !dangerousCommands.includes(commandName);
 }
 
-// ファイルサイズの取得
+// Get file size
 export async function getFileSize(filePath: string): Promise<number> {
   try {
     const stats = await fs.stat(filePath);
@@ -91,7 +91,7 @@ export async function getFileSize(filePath: string): Promise<number> {
   }
 }
 
-// ディレクトリの作成
+// Ensure directory exists
 export async function ensureDirectory(dirPath: string): Promise<void> {
   try {
     await fs.access(dirPath);
@@ -100,7 +100,7 @@ export async function ensureDirectory(dirPath: string): Promise<void> {
   }
 }
 
-// ディレクトリの作成（同期版）
+// Ensure directory exists (sync)
 export function ensureDirectorySync(dirPath: string): void {
   try {
     fsSync.accessSync(dirPath);
@@ -109,7 +109,7 @@ export function ensureDirectorySync(dirPath: string): void {
   }
 }
 
-// ファイルの安全な読み取り
+// Safe file read
 export async function safeReadFile(
   filePath: string,
   offset: number = 0,
@@ -134,7 +134,7 @@ export async function safeReadFile(
   }
 }
 
-// システム情報の取得
+// Get system info
 export function getSystemInfo() {
   return {
     platform: os.platform(),
@@ -147,7 +147,7 @@ export function getSystemInfo() {
   };
 }
 
-// プロセス情報の取得
+// Get process info
 export function getProcessInfo() {
   return {
     pid: process.pid,
@@ -161,12 +161,12 @@ export function getProcessInfo() {
   };
 }
 
-// 安全な実行環境の設定
+// Set safe execution environment
 export function getSafeEnvironment(
   baseEnv: Record<string, string> = {},
   additionalEnv: Record<string, string> = {}
 ): Record<string, string> {
-  // 基本的な環境変数のみを許可
+  // Only allow basic environment variables
   const safeBaseEnv = {
     PATH: process.env['PATH'] || '',
     HOME: process.env['HOME'] || '',
@@ -184,14 +184,14 @@ export function getSafeEnvironment(
   };
 }
 
-// 文字列のサニタイゼーション
+// String sanitization
 export function sanitizeString(input: string, maxLength: number = 1000): string {
   return input
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // 制御文字を削除
+    .replace(/...[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // remove control characters
     .substring(0, maxLength);
 }
 
-// バイト数のフォーマット
+// Format bytes
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
 
@@ -202,7 +202,7 @@ export function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// 実行時間のフォーマット
+// Format duration
 export function formatDuration(milliseconds: number): string {
   if (milliseconds < 1000) {
     return `${milliseconds}ms`;
@@ -221,7 +221,7 @@ export function formatDuration(milliseconds: number): string {
   }
 }
 
-// ログレベル
+// Log level
 export enum LogLevel {
   DEBUG = 0,
   INFO = 1,
@@ -229,7 +229,7 @@ export enum LogLevel {
   ERROR = 3,
 }
 
-// ログエントリ
+// Log entry
 export interface LogEntry {
   timestamp: string;
   level: LogLevel;
@@ -238,7 +238,7 @@ export interface LogEntry {
   component?: string;
 }
 
-// ログ設定
+// Log configuration
 export interface LogConfig {
   enableFileLogging: boolean;
   logFilePath: string;
@@ -247,54 +247,54 @@ export interface LogConfig {
   enableConsoleLogging: boolean;
 }
 
-// デフォルトログ設定
+// Default log configuration
 const defaultLogConfig: LogConfig = {
   enableFileLogging: true,
   logFilePath: './logs/mcp_server.log',
   maxFileSize: 10 * 1024 * 1024, // 10MB
   maxLogFiles: 5,
-  enableConsoleLogging: false, // MCP Serverでは標準出力を汚さない
+  enableConsoleLogging: false, // Do not pollute stdout for MCP Server
 };
 
 let currentLogConfig: LogConfig = { ...defaultLogConfig };
 
-// 内部ログストレージ
+// Internal log storage
 const logEntries: LogEntry[] = [];
 const MAX_LOG_ENTRIES = 1000;
 
-// ログファイル書き込み関数
+// Log file writing function
 async function writeToLogFile(entry: LogEntry): Promise<void> {
   if (!currentLogConfig.enableFileLogging) {
     return;
   }
 
   try {
-    // ログディレクトリを作成
+    // Ensure log directory exists
     const logDir = path.dirname(currentLogConfig.logFilePath);
     await fs.mkdir(logDir, { recursive: true });
 
-    // ログエントリをフォーマット
+    // Format log entry
     const logLine = `${entry.timestamp} [${LogLevel[entry.level]}] ${entry.component || 'SYSTEM'}: ${entry.message}`;
     const dataLine = entry.data ? ` | Data: ${JSON.stringify(entry.data)}` : '';
     const fullLogLine = logLine + dataLine + '\n';
 
-    // ファイルに追記
+    // Append to file
     await fs.appendFile(currentLogConfig.logFilePath, fullLogLine);
 
-    // ファイルサイズチェックとローテーション
+    // Check file size and rotate
     await rotateLogFileIfNeeded();
   } catch (error) {
-    // ファイルログエラーは内部でのみ記録（無限ループを避ける）
+    // File log errors are recorded internally only (avoid infinite loop)
     console.error('Failed to write to log file:', error);
   }
 }
 
-// ログファイルローテーション
+// Log file rotation
 async function rotateLogFileIfNeeded(): Promise<void> {
   try {
     const stats = await fs.stat(currentLogConfig.logFilePath);
     if (stats.size > currentLogConfig.maxFileSize) {
-      // 古いログファイルを移動
+      // Move old log files
       for (let i = currentLogConfig.maxLogFiles - 1; i >= 1; i--) {
         const oldFile = `${currentLogConfig.logFilePath}.${i}`;
         const newFile = `${currentLogConfig.logFilePath}.${i + 1}`;
@@ -302,34 +302,34 @@ async function rotateLogFileIfNeeded(): Promise<void> {
         try {
           await fs.access(oldFile);
           if (i === currentLogConfig.maxLogFiles - 1) {
-            await fs.unlink(oldFile); // 最古のファイルを削除
+            await fs.unlink(oldFile); // remove oldest file
           } else {
             await fs.rename(oldFile, newFile);
           }
         } catch {
-          // ファイルが存在しない場合は無視
+          // Ignore if file does not exist
         }
       }
       
-      // 現在のログファイルを .1 に移動
+      // Move current log file to .1
       await fs.rename(currentLogConfig.logFilePath, `${currentLogConfig.logFilePath}.1`);
     }
   } catch {
-    // ローテーションエラーは無視（ファイルが存在しない場合など）
+    // Ignore rotation errors (e.g., file does not exist)
   }
 }
 
-// ログ設定更新関数
+// Update log configuration
 export function updateLogConfig(config: Partial<LogConfig>): void {
   currentLogConfig = { ...currentLogConfig, ...config };
 }
 
-// ログ設定取得関数
+// Get log configuration
 export function getLogConfig(): LogConfig {
   return { ...currentLogConfig };
 }
 
-// ログ機能（標準出力に書き込まない）
+// Logging functions (do not write to stdout)
 export function internalLog(
   level: LogLevel,
   message: string,
@@ -352,19 +352,19 @@ export function internalLog(
 
   logEntries.push(entry);
 
-  // 古いログエントリを削除
+  // Remove old log entries
   if (logEntries.length > MAX_LOG_ENTRIES) {
     logEntries.shift();
   }
 
-  // ファイルログ書き込み（非同期、エラーは無視）
+  // File log write (async, ignore errors)
   if (currentLogConfig.enableFileLogging) {
     writeToLogFile(entry).catch(() => {
-      // ファイル書き込みエラーは無視（無限ループを避ける）
+      // Ignore file write errors (avoid infinite loop)
     });
   }
 
-  // コンソールログ出力
+  // Console log output
   if (currentLogConfig.enableConsoleLogging) {
     const logMessage = `${entry.timestamp} [${LogLevel[entry.level]}] ${entry.component || 'SYSTEM'}: ${entry.message}`;
     switch (level) {
@@ -385,7 +385,7 @@ export function internalLog(
   }
 }
 
-// ログ取得機能
+// Get log entries
 export function getLogEntries(level?: LogLevel, component?: string, limit?: number): LogEntry[] {
   let filtered = logEntries;
 
@@ -404,7 +404,7 @@ export function getLogEntries(level?: LogLevel, component?: string, limit?: numb
   return filtered;
 }
 
-// 便利なログ関数
+// Convenience logger functions
 export const logger = {
   debug: (message: string, data?: unknown, component?: string) =>
     internalLog(LogLevel.DEBUG, message, data, component),
@@ -415,18 +415,18 @@ export const logger = {
   error: (message: string, data?: unknown, component?: string) =>
     internalLog(LogLevel.ERROR, message, data, component),
   
-  // ログ取得機能
+  // Log retrieval functions
   getEntries: (level?: LogLevel, component?: string, limit?: number) => 
     getLogEntries(level, component, limit),
   
-  // ログ履歴取得（より詳細なフィルタリング）
+  // Get log history (more detailed filtering)
   getHistory: (options?: {
     level?: LogLevel;
     component?: string;
     limit?: number;
     since?: string; // ISO timestamp
     until?: string; // ISO timestamp
-    search?: string; // メッセージ内検索
+    search?: string; // search within messages
   }) => {
     let filtered = logEntries;
 
@@ -464,7 +464,7 @@ export const logger = {
     return filtered;
   },
   
-  // ログファイル読み取り機能
+  // Log file reading function
   readLogFile: async (lines?: number): Promise<string[]> => {
     try {
       const content = await fs.readFile(currentLogConfig.logFilePath, 'utf-8');
@@ -481,7 +481,7 @@ export const logger = {
     }
   },
   
-  // ログ統計取得
+  // Get log statistics
   getStats: () => {
     const stats = {
       totalEntries: logEntries.length,
@@ -502,7 +502,7 @@ export const logger = {
     return stats;
   },
   
-  // ログ設定関数
+  // Log configuration function
   configure: updateLogConfig,
   getConfig: getLogConfig,
 };
