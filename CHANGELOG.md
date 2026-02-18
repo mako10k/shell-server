@@ -22,6 +22,15 @@ All notable changes to this project are documented in this file.
 ### Notes
 - Release notes and supplements (migration steps, known limitations, etc.)
 
+## [0.2.4] - 2026-02-18
+
+### Changed
+- Translated remaining Japanese comments in source files to English for consistent maintainability.
+- Standardized release/changelog wording in English and aligned changelog automation placeholders.
+
+### Notes
+- Added operational rollback policy to preserve user value and require explicit approval before broad rollback.
+
 ## [0.2.3] - 2026-02-18
 
 ### Fixed

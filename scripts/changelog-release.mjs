@@ -51,12 +51,12 @@ function isSemverLike(value) {
 
 function collectSections(unreleasedBody) {
   const hintBullets = new Set([
-    '- CLI / daemon / runtime / tool で追加した機能',
-    '- 既存挙動の変更（互換性に影響する場合は明記）',
-    '- 不具合修正（再現条件や影響範囲を短く記載）',
-    '- セキュリティ関連の修正・評価ルール更新',
-    '- 主要依存関係の更新（理由があれば記載）',
-    '- リリース時の補足（移行手順、既知の制約など）',
+    '- Features added in CLI / daemon / runtime / tools',
+    '- Changes to existing behavior (explicitly note compatibility impact when applicable)',
+    '- Bug fixes (briefly note reproduction conditions and impact scope)',
+    '- Security-related fixes and evaluation rule updates',
+    '- Major dependency updates (include rationale when applicable)',
+    '- Release notes and supplements (migration steps, known limitations, etc.)',
     '-',
     '- '
   ]);
@@ -162,22 +162,22 @@ function main() {
     '## [Unreleased]',
     '',
     '### Added',
-    '- CLI / daemon / runtime / tool で追加した機能',
+    '- Features added in CLI / daemon / runtime / tools',
     '',
     '### Changed',
-    '- 既存挙動の変更（互換性に影響する場合は明記）',
+    '- Changes to existing behavior (explicitly note compatibility impact when applicable)',
     '',
     '### Fixed',
-    '- 不具合修正（再現条件や影響範囲を短く記載）',
+    '- Bug fixes (briefly note reproduction conditions and impact scope)',
     '',
     '### Security',
-    '- セキュリティ関連の修正・評価ルール更新',
+    '- Security-related fixes and evaluation rule updates',
     '',
     '### Dependencies',
-    '- 主要依存関係の更新（理由があれば記載）',
+    '- Major dependency updates (include rationale when applicable)',
     '',
     '### Notes',
-    '- リリース時の補足（移行手順、既知の制約など）'
+    '- Release notes and supplements (migration steps, known limitations, etc.)'
   ].join('\n');
 
   const releaseSection = `${heading}\n\n${releaseBody}`;
