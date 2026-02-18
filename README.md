@@ -116,31 +116,56 @@ npm run build
 
 ## Release
 
-1. Update `CHANGELOG.md` (`[Unreleased]`) using Added / Changed / Fixed / Security / Dependencies / Notes.
+Stable release checklist (short version):
 
-Create next version section from `[Unreleased]`:
-
-```bash
-npm run changelog:release -- 0.1.1
-```
-
-Version bump (updates `package.json`, creates Git commit/tag):
+1. Update `CHANGELOG.md` (`[Unreleased]`) and split next version section.
 
 ```bash
-npm run version:patch
-npm run version:minor
-npm run version:major
+npm run changelog:release -- <version>
 ```
 
-2. Push commit/tag to GitHub.
+2. Run pre-commit quality checks.
 
-Publish:
+```bash
+npm install
+npm run build
+npm audit
+npm run test:e2e
+```
+
+3. Bump version (SemVer) without auto tag/commit.
+
+```bash
+npm version patch --no-git-tag-version
+# or: npm version minor --no-git-tag-version
+# or: npm version major --no-git-tag-version
+```
+
+4. Commit release changes and create annotated tag.
+
+```bash
+git add package.json package-lock.json CHANGELOG.md
+git commit -m "chore(release): <version>"
+git tag -a v<version> -m "Release v<version>"
+```
+
+5. Push branch and tag.
+
+```bash
+git push origin main
+git push origin v<version>
+```
+
+6. Publish package and update GitHub Release.
 
 ```bash
 npm publish
+gh release create v<version> --title "v<version>" --generate-notes
+# if release already exists:
+gh release edit v<version> --title "v<version>" --notes-file <release-note-file>
 ```
 
-3. Create GitHub Release from the tag and copy the version section from `CHANGELOG.md`.
+Detailed fixed procedure for automation/Copilot is documented in `.github/copilot-instruction.md`.
 
 ## Exports
 
