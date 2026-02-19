@@ -727,7 +727,7 @@ async function run(): Promise<void> {
 
   if (!isSubcmd(subcmdRaw)) {
     throw new Error(
-      `Unsupported subcmd: ${subcmdRaw}. Expected one of: ${ALLOWED_SUBCMDS.join(', ')}`
+      `Unsupported subcmd: ${subcmdRaw}. Expected one of: ${ALLOWED_SUBCMDS.join(', ')}, tool, help`
     );
   }
 
