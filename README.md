@@ -53,6 +53,8 @@ Subcmd (function name):
 - `detach`
 - `reattach`
 - `stop`
+- `tool` (see Tool subcommand section below)
+- `help`
 
 Tool subcommand:
 
