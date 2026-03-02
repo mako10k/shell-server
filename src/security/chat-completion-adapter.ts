@@ -137,7 +137,12 @@ export class CCCToMCPCMAdapter {
     let content: string | null = null;
     let finishReason: 'stop' | 'length' | 'tool_calls' = 'stop';
 
-    if (mcpResponse.content.type === 'text') {
+    // Prefer explicit tool_calls bridged from MCP/native sampling responses.
+    if (mcpResponse.tool_calls && mcpResponse.tool_calls.length > 0) {
+      toolCalls = mcpResponse.tool_calls;
+      finishReason = 'tool_calls';
+      content = null;
+    } else if (mcpResponse.content.type === 'text') {
       const responseText = mcpResponse.content.text;
 
       // Use flexible parsing
@@ -158,7 +163,17 @@ export class CCCToMCPCMAdapter {
 
     // Override with actual stopReason if available
     if (mcpResponse.stopReason) {
-      finishReason = (mcpResponse.stopReason as 'stop' | 'length' | 'tool_calls');
+      const normalizedStopReason = mcpResponse.stopReason === 'tool_use'
+        ? 'tool_calls'
+        : mcpResponse.stopReason;
+
+      if (
+        normalizedStopReason === 'stop'
+        || normalizedStopReason === 'length'
+        || normalizedStopReason === 'tool_calls'
+      ) {
+        finishReason = normalizedStopReason;
+      }
     }
 
     const cccResponse: CCCResponse = {
@@ -549,6 +564,44 @@ Make function calls as needed to fulfill the user's request.`;
 export function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallback {
   return async (request: Parameters<CreateMessageCallback>[0]) => {
     try {
+      const extractToolCallsFromNativeContent = (
+        content: unknown,
+      ): Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> => {
+        const parts = Array.isArray(content) ? content : [content];
+        const calls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
+
+        for (let index = 0; index < parts.length; index += 1) {
+          const part = parts[index];
+          if (typeof part !== 'object' || part === null) {
+            continue;
+          }
+
+          const record = part as Record<string, unknown>;
+          if (record['type'] !== 'tool_use') {
+            continue;
+          }
+
+          const rawName = record['name'];
+          if (typeof rawName !== 'string' || rawName.length === 0) {
+            continue;
+          }
+
+          const rawInput = record['input'];
+          const rawId = record['id'];
+
+          calls.push({
+            id: typeof rawId === 'string' && rawId.length > 0 ? rawId : `call_${index}`,
+            type: 'function',
+            function: {
+              name: rawName,
+              arguments: typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput ?? {}),
+            },
+          });
+        }
+
+        return calls;
+      };
+
       // Convert request to MCP format
       const mcpMessages = request.messages
         .filter((msg: { role: string }) => msg.role !== 'tool') // Filter out tool messages as MCP doesn't support them
@@ -634,6 +687,14 @@ export function createMessageCallbackFromMCPServer(server: Server): CreateMessag
           id: `call_${index}`, // Generate ID for compatibility
           ...call,
         }));
+      } else {
+        const nativeToolCalls = extractToolCallsFromNativeContent(result.content);
+        if (nativeToolCalls.length > 0) {
+          response.tool_calls = nativeToolCalls;
+          if (!response.stopReason) {
+            response.stopReason = 'tool_calls';
+          }
+        }
       }
 
       return response;
