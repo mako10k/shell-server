@@ -13,7 +13,8 @@ import { SecurityManager } from './manager.js';
 import { 
   SafetyEvaluationResult,
   SafetyEvaluationResultFactory,
-  ElicitationResult
+  ElicitationResult,
+  EvaluatorErrorInfo
 } from '../types/index.js';
 import type {
   ElicitationSchema,
@@ -111,6 +112,7 @@ interface LLMEvaluationResultBase {
   reasoning: string;
   suggested_alternatives?: string[];  // Common to all types for consistency
   elicitationResult?: ElicitationResult | undefined;  // Elicitation details when applicable
+  evaluator_error?: EvaluatorErrorInfo | undefined;
   
   // Legacy compatibility
   requires_additional_context?: {
@@ -120,6 +122,16 @@ interface LLMEvaluationResultBase {
     user_intent_question: string | null;
     assistant_request_message?: string | null;
   };
+}
+
+class EvaluatorRuntimeError extends Error {
+  public readonly evaluatorError: EvaluatorErrorInfo;
+
+  constructor(message: string, evaluatorError: EvaluatorErrorInfo) {
+    super(message);
+    this.name = 'EvaluatorRuntimeError';
+    this.evaluatorError = evaluatorError;
+  }
 }
 
 // Discriminated union for type safety
@@ -453,17 +465,110 @@ export class EnhancedSafetyEvaluator {
     comment?: string,
     forceUserConfirm?: boolean
   ): Promise<SafetyEvaluationResult> {
-    const llmResult = await this.performLLMCentricEvaluation(
-      command,
-      workingDirectory,
-      history,
-      comment,
-      forceUserConfirm
-    );
-    
-    // Direct conversion from LLMEvaluationResult to SafetyEvaluationResult
-    const elicitationResult = llmResult.elicitationResult;
-    return this.convertLLMResultToSafetyResult(llmResult, 'llm_required', elicitationResult);
+    try {
+      const llmResult = await this.performLLMCentricEvaluation(
+        command,
+        workingDirectory,
+        history,
+        comment,
+        forceUserConfirm
+      );
+      
+      // Direct conversion from LLMEvaluationResult to SafetyEvaluationResult
+      const elicitationResult = llmResult.elicitationResult;
+      return this.convertLLMResultToSafetyResult(llmResult, 'llm_required', elicitationResult);
+    } catch (error) {
+      const evaluatorError = this.classifyEvaluatorError(error);
+      logger.error('Enhanced evaluator failed; returning safe deny with classified error', {
+        command,
+        evaluatorError,
+        originalError: error instanceof Error ? error.message : String(error),
+      });
+
+      return SafetyEvaluationResultFactory.createDeny(
+        `Security evaluator failure (${evaluatorError.code}): ${evaluatorError.message}`,
+        {
+          llmEvaluationUsed: true,
+          suggestedAlternatives: [
+            'Retry the same command once',
+            'If this persists, temporarily disable enhanced mode or inspect evaluator logs',
+          ],
+          evaluatorError,
+        }
+      );
+    }
+  }
+
+  private classifyEvaluatorError(error: unknown): EvaluatorErrorInfo {
+    if (error instanceof EvaluatorRuntimeError) {
+      return error.evaluatorError;
+    }
+
+    if (error instanceof ToolArgumentParseError) {
+      return {
+        code: 'EVALUATOR_TOOL_ARGS_INVALID',
+        message: 'Model returned malformed tool arguments that could not be parsed.',
+        http_analog_status: 422,
+        http_analog_label: 'Unprocessable Content',
+        retryable: true,
+        should_disconnect_client: false,
+      };
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes('Contract validation failed')) {
+      return {
+        code: 'EVALUATOR_CONTRACT_MISMATCH',
+        message,
+        http_analog_status: 409,
+        http_analog_label: 'Conflict',
+        retryable: false,
+        should_disconnect_client: true,
+      };
+    }
+
+    if (message.includes('No valid tool call in response')) {
+      return {
+        code: 'EVALUATOR_LLM_NO_TOOL_CALL',
+        message: 'Model did not return a required function/tool call.',
+        http_analog_status: 502,
+        http_analog_label: 'Bad Gateway',
+        retryable: true,
+        should_disconnect_client: false,
+      };
+    }
+
+    if (message.includes('timeout') || message.includes('timed out')) {
+      return {
+        code: 'EVALUATOR_TIMEOUT',
+        message,
+        http_analog_status: 504,
+        http_analog_label: 'Gateway Timeout',
+        retryable: true,
+        should_disconnect_client: false,
+      };
+    }
+
+    if (message.includes('chatAdapter is not set') || message.includes('provider')) {
+      return {
+        code: 'EVALUATOR_PROVIDER_UNAVAILABLE',
+        message,
+        http_analog_status: 503,
+        http_analog_label: 'Service Unavailable',
+        retryable: true,
+        should_disconnect_client: false,
+      };
+    }
+
+    return {
+      code: 'EVALUATOR_INTERNAL_ERROR',
+      message,
+      http_analog_status: 500,
+      http_analog_label: 'Internal Server Error',
+      retryable: false,
+      should_disconnect_client: false,
+    };
   }
 
   /**
@@ -554,6 +659,8 @@ export class EnhancedSafetyEvaluator {
     let maxIteration = 5;
     let hasElicitationBeenAttempted = false; // Track ELICITATION attempts
     let capturedElicitationResult: ElicitationResult | undefined = undefined; // Store elicitation result
+    let hasMissingToolCallRetryBeenAttempted = false;
+    let forcedToolName: 'user_confirm' | undefined = undefined;
     
     try {
       while (true) {
@@ -568,6 +675,14 @@ export class EnhancedSafetyEvaluator {
             evaluation_result: 'deny',
             reasoning: 'Maximum iterations reached - fallback to safe denial',
             suggested_alternatives: [],
+            evaluator_error: {
+              code: 'EVALUATOR_TIMEOUT',
+              message: 'Security evaluator reached max internal iterations.',
+              http_analog_status: 504,
+              http_analog_label: 'Gateway Timeout',
+              retryable: true,
+              should_disconnect_client: false,
+            },
             ...(capturedElicitationResult && { elicitationResult: capturedElicitationResult }),
           };
         }
@@ -578,8 +693,12 @@ export class EnhancedSafetyEvaluator {
           llmResult = await this.callLLMForEvaluationWithMessages(
             messages,
             promptContext.command,
-            forceUserConfirm
+            forceUserConfirm,
+            forcedToolName
           );
+
+          // Reset retry state after a successful tool-call response.
+          forcedToolName = undefined;
         } catch (error) {
           if (error instanceof ToolArgumentParseError) {
             logger.warn('Tool argument parse error encountered - requesting corrected response', {
@@ -595,6 +714,47 @@ export class EnhancedSafetyEvaluator {
             });
 
             continue;
+          }
+
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const isMissingToolCall = errorMessage.includes('No valid tool call in response');
+          if (isMissingToolCall && !hasMissingToolCallRetryBeenAttempted) {
+            hasMissingToolCallRetryBeenAttempted = true;
+            forcedToolName = 'user_confirm';
+
+            logger.warn('LLM returned no tool call - retrying once with explicit tool choice', {
+              command,
+            });
+
+            messages.push({
+              role: 'user',
+              content: 'VALIDATOR_FEEDBACK: You must return exactly one tool call. Do not answer with plain text.',
+              timestamp: getCurrentTimestamp(),
+              type: 'history',
+            });
+
+            continue;
+          }
+
+          if (isMissingToolCall) {
+            logger.error('LLM returned no tool call after retry - using safe deny fallback', {
+              command,
+            });
+
+            return {
+              evaluation_result: 'deny',
+              reasoning: 'Security evaluation failed because the model did not return a valid tool call. Execution denied by safe fallback.',
+              suggested_alternatives: [],
+              evaluator_error: {
+                code: 'EVALUATOR_LLM_NO_TOOL_CALL',
+                message: 'Model failed to return a function/tool call after retry.',
+                http_analog_status: 502,
+                http_analog_label: 'Bad Gateway',
+                retryable: true,
+                should_disconnect_client: false,
+              },
+              ...(capturedElicitationResult && { elicitationResult: capturedElicitationResult }),
+            };
           }
 
           throw error;
@@ -730,7 +890,8 @@ export class EnhancedSafetyEvaluator {
       type?: 'history' | 'elicitation' | 'execution_result' | 'user_response';
     }>,
     command: string,
-    forceUserConfirm?: boolean
+    forceUserConfirm?: boolean,
+    forcedToolName?: 'user_confirm'
   ): Promise<LLMEvaluationResult> {
     try {
       logger.debug('Pre-LLM Debug (Messages)', {
@@ -747,6 +908,8 @@ export class EnhancedSafetyEvaluator {
       const { newSecurityEvaluationTools } = await import('./security-tools.js');
       logger.debug('Security tools imported successfully');
 
+      this.validateFunctionCallingContract(messages, newSecurityEvaluationTools);
+
       // Convert our message format to OpenAI format
       const openAIMessages = messages.map(msg => ({
         role: msg.role as 'system' | 'user' | 'assistant',
@@ -756,7 +919,7 @@ export class EnhancedSafetyEvaluator {
       logger.debug('About to call LLM with Function Calling (Messages)', {
         messagesCount: openAIMessages.length,
         securityTools: JSON.stringify(newSecurityEvaluationTools, null, 2),
-        toolChoice: 'auto' // Let LLM choose which evaluation tool to use
+        toolChoice: forcedToolName ? forcedToolName : (forceUserConfirm ? 'user_confirm' : 'auto')
       });
 
       // Use ChatCompletionAdapter with OpenAI API compatible format
@@ -766,7 +929,9 @@ export class EnhancedSafetyEvaluator {
         max_tokens: 500,
         temperature: 0.1,
         tools: newSecurityEvaluationTools,
-        tool_choice: forceUserConfirm ? { type: 'function', function: { name: 'user_confirm' } } : 'auto'
+        tool_choice: forcedToolName
+          ? { type: 'function', function: { name: forcedToolName } }
+          : (forceUserConfirm ? { type: 'function', function: { name: 'user_confirm' } } : 'auto')
       });
       logger.debug('LLM call completed successfully');
 
@@ -1036,6 +1201,44 @@ export class EnhancedSafetyEvaluator {
       logger.error('=== End Exception Debug ===');
 
       throw new Error(`Function Call evaluation failed: ${errorMessage}`);
+    }
+  }
+
+  private validateFunctionCallingContract(
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    tools: Array<{ type: 'function'; function: { name: string } }>
+  ): void {
+    const requiredToolNames = ['allow', 'deny', 'user_confirm', 'add_more_history', 'ai_assistant_confirm'];
+    const providedToolNames = new Set(tools.map((tool) => tool.function.name));
+    const missingToolNames = requiredToolNames.filter((toolName) => !providedToolNames.has(toolName));
+
+    if (missingToolNames.length > 0) {
+      throw new EvaluatorRuntimeError(
+        `Contract validation failed: missing required tools: ${missingToolNames.join(', ')}`,
+        {
+          code: 'EVALUATOR_CONTRACT_MISMATCH',
+          message: `Missing required security tools: ${missingToolNames.join(', ')}`,
+          http_analog_status: 409,
+          http_analog_label: 'Conflict',
+          retryable: false,
+          should_disconnect_client: true,
+        }
+      );
+    }
+
+    const joinedMessageText = messages.map((message) => message.content).join('\n');
+    if (joinedMessageText.includes('evaluate_command_security function')) {
+      throw new EvaluatorRuntimeError(
+        'Contract validation failed: prompt still references deprecated evaluate_command_security function',
+        {
+          code: 'EVALUATOR_CONTRACT_MISMATCH',
+          message: 'Prompt references deprecated function name evaluate_command_security.',
+          http_analog_status: 409,
+          http_analog_label: 'Conflict',
+          retryable: false,
+          should_disconnect_client: true,
+        }
+      );
     }
   }
 
@@ -1332,6 +1535,7 @@ export class EnhancedSafetyEvaluator {
             llmEvaluationUsed: true,
             suggestedAlternatives: llmResult.suggested_alternatives,
             elicitationResult,
+            evaluatorError: llmResult.evaluator_error,
           }
         );
       
@@ -1342,6 +1546,7 @@ export class EnhancedSafetyEvaluator {
             llmEvaluationUsed: true,
             suggestedAlternatives: llmResult.suggested_alternatives,
             elicitationResult,
+            evaluatorError: llmResult.evaluator_error,
           }
         );
       
@@ -1358,6 +1563,7 @@ export class EnhancedSafetyEvaluator {
             suggestedAlternatives: llmResult.suggested_alternatives,
             confirmationMessage: llmResult.assistant_request_message,
             elicitationResult,
+            evaluatorError: llmResult.evaluator_error,
           }
         );
       

@@ -46,6 +46,29 @@ type DaemonRequest = {
   params?: Record<string, unknown>;
 };
 
+type DaemonResponse = {
+  ok: boolean;
+  error?: string;
+  errorInfo?: {
+    code?: string;
+    category?: string;
+    details?: Record<string, unknown>;
+  };
+  disconnectClient?: boolean;
+  result?: unknown;
+  attached?: boolean;
+  detached?: boolean;
+  attachedAt?: string;
+  detachedAt?: string;
+  startedAt?: string;
+  uptimeSeconds?: number;
+  pid?: number;
+  cwd?: string;
+  branch?: string;
+  socketPath?: string;
+  childSocketPath?: string;
+};
+
 type QuerySegment =
   | { type: 'prop'; key: string }
   | { type: 'index'; index: number }
@@ -523,7 +546,7 @@ async function printResponse(response: unknown, query: string | undefined): Prom
   return 0;
 }
 
-async function requestDaemon(socketPath: string, request: DaemonRequest): Promise<unknown> {
+async function requestDaemon(socketPath: string, request: DaemonRequest): Promise<DaemonResponse> {
   return new Promise((resolve, reject) => {
     const socket = net.connect({ path: socketPath }, () => {
       socket.write(`${JSON.stringify(request)}\n`);
@@ -557,7 +580,7 @@ async function requestDaemon(socketPath: string, request: DaemonRequest): Promis
       }
 
       try {
-        resolve(JSON.parse(line) as unknown);
+        resolve(JSON.parse(line) as DaemonResponse);
       } catch (error) {
         reject(new Error(`Failed to parse daemon response: ${String(error)}`));
       }
@@ -640,7 +663,7 @@ async function requestDaemonWithAutoStart(
   socketPath: string,
   request: DaemonRequest,
   options: { cwd: string; branch: string }
-): Promise<unknown> {
+): Promise<DaemonResponse> {
   try {
     return await requestDaemon(socketPath, request);
   } catch (error) {
@@ -650,6 +673,29 @@ async function requestDaemonWithAutoStart(
 
     await ensureDaemonStarted({ socketPath, cwd: options.cwd, branch: options.branch });
     return requestDaemon(socketPath, request);
+  }
+}
+
+function emitDisconnectGuidanceIfNeeded(response: DaemonResponse, request: DaemonRequest): void {
+  if (response.ok || response.disconnectClient !== true) {
+    return;
+  }
+
+  const code = response.errorInfo?.code;
+  const details = response.errorInfo?.details;
+  const evaluatorError = details?.['evaluator_error'];
+  const hintCode = typeof code === 'string' ? code : 'UNKNOWN';
+
+  process.stderr.write(
+    `[shell-server-cli] Daemon detached this client due to non-retryable evaluator error (${hintCode}) during '${request.action}'.\n`
+  );
+
+  if (evaluatorError && typeof evaluatorError === 'object') {
+    const status = (evaluatorError as Record<string, unknown>)['http_analog_status'];
+    const label = (evaluatorError as Record<string, unknown>)['http_analog_label'];
+    if (typeof status === 'number' && typeof label === 'string') {
+      process.stderr.write(`[shell-server-cli] Evaluator classification: ${status} ${label}.\n`);
+    }
   }
 }
 
@@ -716,11 +762,13 @@ async function run(): Promise<void> {
       ...inputJson,
       ...parseToolParams(rest.slice(2)),
     };
-    const response = await requestDaemonWithAutoStart(socketPath, {
+    const request: DaemonRequest = {
       action: 'tool',
       tool_name: toolName,
       params,
-    }, { cwd, branch });
+    };
+    const response = await requestDaemonWithAutoStart(socketPath, request, { cwd, branch });
+    emitDisconnectGuidanceIfNeeded(response, request);
     process.exitCode = await printResponse(response, query);
     return;
   }
@@ -731,7 +779,9 @@ async function run(): Promise<void> {
     );
   }
 
-  const response = await requestDaemonWithAutoStart(socketPath, { action: subcmdRaw }, { cwd, branch });
+  const request: DaemonRequest = { action: subcmdRaw };
+  const response = await requestDaemonWithAutoStart(socketPath, request, { cwd, branch });
+  emitDisconnectGuidanceIfNeeded(response, request);
   process.exitCode = await printResponse(response, query);
 }
 

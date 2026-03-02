@@ -47,6 +47,12 @@ type DaemonRequest = {
 type DaemonResponse = {
   ok: boolean;
   error?: string;
+  errorInfo?: {
+    code?: string;
+    category?: string;
+    details?: Record<string, unknown>;
+  };
+  disconnectClient?: boolean;
   result?: unknown;
   attached?: boolean;
   detached?: boolean;
@@ -64,6 +70,66 @@ type DaemonResponse = {
 type HeartbeatMessage = {
   type?: 'ping' | 'pong';
 };
+
+type EvaluatorErrorPayload = {
+  should_disconnect_client?: boolean;
+};
+
+function getShouldDisconnectClientFromDetails(details: unknown): boolean {
+  if (!details || typeof details !== 'object') {
+    return false;
+  }
+
+  const detailsRecord = details as Record<string, unknown>;
+  const evaluatorError = detailsRecord['evaluator_error'];
+  if (evaluatorError && typeof evaluatorError === 'object') {
+    const shouldDisconnect = (evaluatorError as EvaluatorErrorPayload).should_disconnect_client;
+    if (shouldDisconnect === true) {
+      return true;
+    }
+  }
+
+  const safetyEvaluation = detailsRecord['safety_evaluation'];
+  if (safetyEvaluation && typeof safetyEvaluation === 'object') {
+    const nestedEvaluatorError = (safetyEvaluation as Record<string, unknown>)['evaluator_error'];
+    if (nestedEvaluatorError && typeof nestedEvaluatorError === 'object') {
+      const shouldDisconnect = (nestedEvaluatorError as EvaluatorErrorPayload).should_disconnect_client;
+      return shouldDisconnect === true;
+    }
+  }
+
+  return false;
+}
+
+function normalizeDaemonError(error: unknown): {
+  message: string;
+  code?: string;
+  category?: string;
+  details?: Record<string, unknown>;
+  shouldDisconnectClient: boolean;
+} {
+  if (error instanceof Error) {
+    const typed = error as Error & {
+      code?: string;
+      category?: string;
+      details?: Record<string, unknown>;
+    };
+
+    const details = typed.details;
+    return {
+      message: typed.message,
+      ...(typed.code ? { code: typed.code } : {}),
+      ...(typed.category ? { category: typed.category } : {}),
+      ...(details ? { details } : {}),
+      shouldDisconnectClient: getShouldDisconnectClientFromDetails(details),
+    };
+  }
+
+  return {
+    message: String(error),
+    shouldDisconnectClient: false,
+  };
+}
 
 function getArgValue(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
@@ -561,7 +627,34 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
           );
           sendResponse(socket, { ok: true, result });
         } catch (error) {
-          sendResponse(socket, { ok: false, error: String(error) });
+          const normalizedError = normalizeDaemonError(error);
+
+          if (normalizedError.shouldDisconnectClient) {
+            logger.warn('Disconnecting attached client due to non-retryable evaluator contract error', {
+              toolName: toolNameRaw,
+              code: normalizedError.code,
+              category: normalizedError.category,
+            }, DAEMON_COMPONENT);
+            closeAttachSocket();
+            markDetached();
+          }
+
+          sendResponse(socket, {
+            ok: false,
+            error: normalizedError.message,
+            ...(normalizedError.code || normalizedError.category || normalizedError.details
+              ? {
+                  errorInfo: {
+                    ...(normalizedError.code ? { code: normalizedError.code } : {}),
+                    ...(normalizedError.category ? { category: normalizedError.category } : {}),
+                    ...(normalizedError.details ? { details: normalizedError.details } : {}),
+                  },
+                }
+              : {}),
+            ...(normalizedError.shouldDisconnectClient
+              ? { disconnectClient: true }
+              : {}),
+          });
         }
         return;
       }

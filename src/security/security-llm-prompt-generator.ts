@@ -234,7 +234,7 @@ ${this.generateHistorySection(context)}
 
 ${context.detectedPatterns ? `**Detected Patterns**: ${context.detectedPatterns.join(', ')}` : ''}
 
-**INSTRUCTION**: Use the evaluate_command_security function to provide your security evaluation.`;
+**INSTRUCTION**: You MUST call exactly one security tool: allow, deny, user_confirm, add_more_history, or ai_assistant_confirm.`;
 
     return { systemPrompt, userMessage };
   }

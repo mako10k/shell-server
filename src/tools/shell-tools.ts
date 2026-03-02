@@ -51,6 +51,20 @@ import { saveCriteria as _saveCriteria, getCriteriaStatus as _getCriteriaStatus 
 interface ToolSafetyEvaluationResponse {
   evaluation_result: string;
   reasoning: string;
+  evaluator_error?: {
+    code:
+      | 'EVALUATOR_CONTRACT_MISMATCH'
+      | 'EVALUATOR_LLM_NO_TOOL_CALL'
+      | 'EVALUATOR_TOOL_ARGS_INVALID'
+      | 'EVALUATOR_PROVIDER_UNAVAILABLE'
+      | 'EVALUATOR_TIMEOUT'
+      | 'EVALUATOR_INTERNAL_ERROR';
+    message: string;
+    http_analog_status: number;
+    http_analog_label: string;
+    retryable: boolean;
+    should_disconnect_client: boolean;
+  };
   suggested_alternatives?: string[];
   llm_evaluation_used?: boolean;
   context_analysis?: unknown;
@@ -126,7 +140,15 @@ export class ShellTools {
         // Handle evaluation results with strict safety guards
         if (safetyEvaluation?.getEvaluationResult() === 'deny') {
           const toolResponse = safetyEvaluation.generateToolResponse() as ToolSafetyEvaluationResponse;
-          throw new Error(`Command denied: ${toolResponse.reasoning}`);
+          throw new MCPShellError(
+            'SECURITY_001',
+            `Command denied: ${toolResponse.reasoning}`,
+            'SECURITY',
+            {
+              safety_evaluation: toolResponse,
+              evaluator_error: toolResponse.evaluator_error,
+            }
+          );
         }
 
         // For NEED_ASSISTANT_CONFIRM, return evaluation info without executing
@@ -145,8 +167,14 @@ export class ShellTools {
         // CRITICAL SAFETY GUARD: Only execute if explicitly ALLOWED
         if (safetyEvaluation && safetyEvaluation.getEvaluationResult() !== 'allow') {
           const toolResponse = safetyEvaluation.generateToolResponse() as ToolSafetyEvaluationResponse;
-          throw new Error(
-            `Command execution blocked: evaluation result '${safetyEvaluation.getEvaluationResult()}' is not ALLOW. Reasoning: ${toolResponse.reasoning}`
+          throw new MCPShellError(
+            'SECURITY_001',
+            `Command execution blocked: evaluation result '${safetyEvaluation.getEvaluationResult()}' is not ALLOW. Reasoning: ${toolResponse.reasoning}`,
+            'SECURITY',
+            {
+              safety_evaluation: toolResponse,
+              evaluator_error: toolResponse.evaluator_error,
+            }
           );
         }
       }

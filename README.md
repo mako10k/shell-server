@@ -179,3 +179,39 @@ Detailed fixed procedure for automation/Copilot is documented in `.github/copilo
 - `SHELL_SERVER_DAEMON_SOCKET` (socket path override)
 - `SHELL_SERVER_DAEMON_CWD` (working directory override)
 - `SHELL_SERVER_DAEMON_BRANCH` (branch namespace override)
+
+## Evaluator Errors (HTTP Analogy)
+
+When `shell_execute` uses the enhanced evaluator, daemon/tool errors include structured
+`evaluator_error` metadata. These codes use an HTTP-style analogy for quick triage.
+
+- `EVALUATOR_CONTRACT_MISMATCH` -> `409 Conflict`
+	- Meaning: prompt/tool contract is inconsistent (deterministic client/runtime bug)
+	- Retry: no
+	- Daemon behavior: may detach current attached client (`disconnectClient: true`)
+- `EVALUATOR_TOOL_ARGS_INVALID` -> `422 Unprocessable Content`
+	- Meaning: model returned malformed tool arguments
+	- Retry: yes
+	- Daemon behavior: keep connection
+- `EVALUATOR_LLM_NO_TOOL_CALL` -> `502 Bad Gateway`
+	- Meaning: model failed to return required function/tool call
+	- Retry: yes
+	- Daemon behavior: keep connection
+- `EVALUATOR_PROVIDER_UNAVAILABLE` -> `503 Service Unavailable`
+	- Meaning: upstream model provider or adapter unavailable
+	- Retry: yes
+	- Daemon behavior: keep connection
+- `EVALUATOR_TIMEOUT` -> `504 Gateway Timeout`
+	- Meaning: evaluator timed out / max internal retries reached
+	- Retry: yes
+	- Daemon behavior: keep connection
+- `EVALUATOR_INTERNAL_ERROR` -> `500 Internal Server Error`
+	- Meaning: unexpected evaluator-side fault
+	- Retry: usually no
+	- Daemon behavior: keep connection
+
+Notes:
+
+- Security remains fail-closed for command execution (`deny` on evaluator failure).
+- Daemon process remains alive; only the affected client session may be detached for
+	non-retryable contract mismatch.

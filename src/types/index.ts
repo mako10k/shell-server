@@ -35,6 +35,24 @@ const ErrorCategorySchema = z.enum([
 ]);
 export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;
 
+// Evaluator error taxonomy for security-evaluation failures
+export type EvaluatorErrorCode =
+  | 'EVALUATOR_CONTRACT_MISMATCH'
+  | 'EVALUATOR_LLM_NO_TOOL_CALL'
+  | 'EVALUATOR_TOOL_ARGS_INVALID'
+  | 'EVALUATOR_PROVIDER_UNAVAILABLE'
+  | 'EVALUATOR_TIMEOUT'
+  | 'EVALUATOR_INTERNAL_ERROR';
+
+export interface EvaluatorErrorInfo {
+  code: EvaluatorErrorCode;
+  message: string;
+  http_analog_status: number;
+  http_analog_label: string;
+  retryable: boolean;
+  should_disconnect_client: boolean;
+}
+
 // Basic schemas
 export const EnvironmentVariablesSchema = z
   .record(z.string(), z.string())
@@ -267,11 +285,18 @@ export abstract class SafetyEvaluationResult {
   protected reasoning: string;
   protected llm_evaluation_used?: boolean | undefined;
   protected elicitation_result?: ElicitationResult | undefined;
+  protected evaluator_error?: EvaluatorErrorInfo | undefined;
   
-  constructor(reasoning: string, llmEvaluationUsed?: boolean, elicitationResult?: ElicitationResult) {
+  constructor(
+    reasoning: string,
+    llmEvaluationUsed?: boolean,
+    elicitationResult?: ElicitationResult,
+    evaluatorError?: EvaluatorErrorInfo
+  ) {
     this.reasoning = reasoning;
     this.llm_evaluation_used = llmEvaluationUsed;
     this.elicitation_result = elicitationResult;
+    this.evaluator_error = evaluatorError;
   }
   
   // Response generation method (abstract)
@@ -288,10 +313,11 @@ export abstract class SafetyEvaluationCompletedResult extends SafetyEvaluationRe
     reasoning: string, 
     llmEvaluationUsed?: boolean,
     elicitationResult?: ElicitationResult,
+    evaluatorError?: EvaluatorErrorInfo,
     confirmationMessage?: string,
     userResponse?: Record<string, unknown>
   ) {
-    super(reasoning, llmEvaluationUsed, elicitationResult);
+    super(reasoning, llmEvaluationUsed, elicitationResult, evaluatorError);
     this.confirmation_message = confirmationMessage;
     this.user_response = userResponse;
   }
@@ -302,7 +328,8 @@ export abstract class SafetyEvaluationCompletedResult extends SafetyEvaluationRe
       llm_evaluation_used: this.llm_evaluation_used,
       confirmation_message: this.confirmation_message,
       user_response: this.user_response,
-      elicitation_result: this.elicitation_result
+      elicitation_result: this.elicitation_result,
+      evaluator_error: this.evaluator_error,
     };
   }
 }
@@ -317,13 +344,14 @@ export class SafetyEvaluationAllowResult extends SafetyEvaluationCompletedResult
     reasoning: string,
     llmEvaluationUsed?: boolean,
     elicitationResult?: ElicitationResult,
+    evaluatorError?: EvaluatorErrorInfo,
     suggestedAlternatives?: string[],
     contextAnalysis?: unknown,
     nextAction?: string,
     confirmationMessage?: string,
     userResponse?: Record<string, unknown>
   ) {
-    super(reasoning, llmEvaluationUsed, elicitationResult, confirmationMessage, userResponse);
+    super(reasoning, llmEvaluationUsed, elicitationResult, evaluatorError, confirmationMessage, userResponse);
     this.suggested_alternatives = suggestedAlternatives;
     this.context_analysis = contextAnalysis;
     this.next_action = nextAction;
@@ -351,12 +379,13 @@ export class SafetyEvaluationDenyResult extends SafetyEvaluationCompletedResult 
     reasoning: string,
     llmEvaluationUsed?: boolean,
     elicitationResult?: ElicitationResult,
+    evaluatorError?: EvaluatorErrorInfo,
     suggestedAlternatives?: string[],
     nextAction?: string,
     confirmationMessage?: string,
     userResponse?: Record<string, unknown>
   ) {
-    super(reasoning, llmEvaluationUsed, elicitationResult, confirmationMessage, userResponse);
+    super(reasoning, llmEvaluationUsed, elicitationResult, evaluatorError, confirmationMessage, userResponse);
     this.suggested_alternatives = suggestedAlternatives;
     this.next_action = nextAction;
   }
@@ -394,12 +423,13 @@ export class SafetyEvaluationAiAssistantConfirmResult extends SafetyEvaluationCo
     },
     llmEvaluationUsed?: boolean,
     elicitationResult?: ElicitationResult,
+    evaluatorError?: EvaluatorErrorInfo,
     suggestedAlternatives?: string[],
     contextAnalysis?: unknown,
     confirmationMessage?: string,
     userResponse?: Record<string, unknown>
   ) {
-    super(reasoning, llmEvaluationUsed, elicitationResult, confirmationMessage, userResponse);
+    super(reasoning, llmEvaluationUsed, elicitationResult, evaluatorError, confirmationMessage, userResponse);
     this.next_action = nextAction;
     this.suggested_alternatives = suggestedAlternatives;
     this.context_analysis = contextAnalysis;
@@ -425,6 +455,7 @@ export class SafetyEvaluationResultFactory {
     options: {
       llmEvaluationUsed?: boolean;
       elicitationResult?: ElicitationResult | undefined;
+      evaluatorError?: EvaluatorErrorInfo | undefined;
       suggestedAlternatives?: string[] | undefined;
       contextAnalysis?: unknown;
       nextAction?: string | undefined;
@@ -436,6 +467,7 @@ export class SafetyEvaluationResultFactory {
       reasoning,
       options.llmEvaluationUsed,
       options.elicitationResult,
+      options.evaluatorError,
       options.suggestedAlternatives,
       options.contextAnalysis,
       options.nextAction,
@@ -449,6 +481,7 @@ export class SafetyEvaluationResultFactory {
     options: {
       llmEvaluationUsed?: boolean;
       elicitationResult?: ElicitationResult | undefined;
+      evaluatorError?: EvaluatorErrorInfo | undefined;
       suggestedAlternatives?: string[] | undefined;
       nextAction?: string | undefined;
       confirmationMessage?: string | undefined;
@@ -459,6 +492,7 @@ export class SafetyEvaluationResultFactory {
       reasoning,
       options.llmEvaluationUsed,
       options.elicitationResult,
+      options.evaluatorError,
       options.suggestedAlternatives,
       options.nextAction,
       options.confirmationMessage,
@@ -477,6 +511,7 @@ export class SafetyEvaluationResultFactory {
     options: {
       llmEvaluationUsed?: boolean;
       elicitationResult?: ElicitationResult | undefined;
+      evaluatorError?: EvaluatorErrorInfo | undefined;
       suggestedAlternatives?: string[] | undefined;
       contextAnalysis?: unknown;
       confirmationMessage?: string | undefined;
@@ -488,6 +523,7 @@ export class SafetyEvaluationResultFactory {
       nextAction,
       options.llmEvaluationUsed,
       options.elicitationResult,
+      options.evaluatorError,
       options.suggestedAlternatives,
       options.contextAnalysis,
       options.confirmationMessage,
