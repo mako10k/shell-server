@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises';
 import * as net from 'net';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { spawn, type ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
 import { createRequire } from 'module';
@@ -39,7 +40,16 @@ function parseDurationMsEnv(name: string, fallback: number): number {
 }
 
 type DaemonRequest = {
-  action?: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop' | 'tool';
+  action?:
+    | 'status'
+    | 'info'
+    | 'attach'
+    | 'detach'
+    | 'reattach'
+    | 'stop'
+    | 'tool'
+    | 'reload_config'
+    | 'config_get';
   tool_name?: string;
   params?: Record<string, unknown>;
 };
@@ -65,6 +75,8 @@ type DaemonResponse = {
   branch?: string;
   socketPath?: string;
   childSocketPath?: string;
+  config?: Record<string, unknown>;
+  configVersion?: string;
 };
 
 type HeartbeatMessage = {
@@ -74,6 +86,86 @@ type HeartbeatMessage = {
 type EvaluatorErrorPayload = {
   should_disconnect_client?: boolean;
 };
+
+type RuntimeConfigUpdates = {
+  enhanced_mode_enabled?: boolean;
+  llm_evaluation_enabled?: boolean;
+  elicitation_enabled?: boolean;
+  enable_pattern_filtering?: boolean;
+};
+
+const RUNTIME_CONFIG_UPDATE_KEYS: Array<keyof RuntimeConfigUpdates> = [
+  'enhanced_mode_enabled',
+  'llm_evaluation_enabled',
+  'elicitation_enabled',
+  'enable_pattern_filtering',
+];
+
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === 'boolean';
+}
+
+function buildConfigSnapshotForDaemon(config: Record<string, unknown>): {
+  snapshot: Record<string, unknown>;
+  version: string;
+} {
+  const snapshot = {
+    enhanced_mode_enabled: config['enhanced_mode_enabled'],
+    llm_evaluation_enabled: config['llm_evaluation_enabled'],
+    elicitation_enabled: config['elicitation_enabled'],
+    enable_pattern_filtering: config['enable_pattern_filtering'],
+  };
+  const version = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(snapshot))
+    .digest('hex')
+    .slice(0, 16);
+
+  return { snapshot, version };
+}
+
+function parseRuntimeConfigUpdates(params: Record<string, unknown> | undefined): {
+  ok: true;
+  updates: RuntimeConfigUpdates;
+} | {
+  ok: false;
+  error: string;
+} {
+  const payload = params ?? {};
+  const keys = Object.keys(payload);
+
+  if (keys.length === 0) {
+    return {
+      ok: false,
+      error: 'invalid_config_payload:at_least_one_key_required',
+    };
+  }
+
+  const invalidKeys = keys.filter((key) => !RUNTIME_CONFIG_UPDATE_KEYS.includes(key as keyof RuntimeConfigUpdates));
+  if (invalidKeys.length > 0) {
+    return {
+      ok: false,
+      error: `invalid_config_payload:unknown_keys:${invalidKeys.join(',')}`,
+    };
+  }
+
+  const updates: RuntimeConfigUpdates = {};
+  for (const key of keys) {
+    const value = payload[key];
+    if (!isBoolean(value)) {
+      return {
+        ok: false,
+        error: `invalid_config_payload:${key}:boolean_required`,
+      };
+    }
+    updates[key as keyof RuntimeConfigUpdates] = value;
+  }
+
+  return {
+    ok: true,
+    updates,
+  };
+}
 
 function getShouldDisconnectClientFromDetails(details: unknown): boolean {
   if (!details || typeof details !== 'object') {
@@ -505,6 +597,57 @@ export async function startDaemon(options: DaemonStartOptions): Promise<void> {
           ...(branch ? { branch } : {}),
           ...(action === 'info' ? { socketPath } : {}),
           ...(action === 'info' ? { childSocketPath } : {}),
+          ...(action === 'info'
+            ? (() => {
+                const currentConfig = toolRuntime.securityManager.getEnhancedConfig() as unknown as Record<string, unknown>;
+                const { version } = buildConfigSnapshotForDaemon(currentConfig);
+                return { configVersion: version };
+              })()
+            : {}),
+        });
+        return;
+      }
+
+      if (action === 'config_get') {
+        const currentConfig = toolRuntime.securityManager.getEnhancedConfig() as unknown as Record<string, unknown>;
+        const { snapshot, version } = buildConfigSnapshotForDaemon(currentConfig);
+        sendResponse(socket, {
+          ok: true,
+          config: snapshot,
+          configVersion: version,
+        });
+        return;
+      }
+
+      if (action === 'reload_config') {
+        const parsed = parseRuntimeConfigUpdates(request.params);
+        if (!parsed.ok) {
+          sendResponse(socket, {
+            ok: false,
+            error: parsed.error,
+          });
+          return;
+        }
+
+        if (
+          parsed.updates.enhanced_mode_enabled === true &&
+          !toolRuntime.securityManager.hasEnhancedEvaluator()
+        ) {
+          sendResponse(socket, {
+            ok: false,
+            error: 'invalid_config_payload:enhanced_mode_enable_requires_initialized_evaluator',
+          });
+          return;
+        }
+
+        toolRuntime.securityManager.setEnhancedConfig(parsed.updates);
+
+        const appliedConfig = toolRuntime.securityManager.getEnhancedConfig() as unknown as Record<string, unknown>;
+        const { snapshot, version } = buildConfigSnapshotForDaemon(appliedConfig);
+        sendResponse(socket, {
+          ok: true,
+          config: snapshot,
+          configVersion: version,
         });
         return;
       }

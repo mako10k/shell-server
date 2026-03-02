@@ -73,6 +73,7 @@ Examples:
 ```bash
 shell-server-cli --branch main tool shell-execute --input-json '{"command":"echo hello","execution_mode":"foreground"}'
 shell-server-cli --branch main tool shell-execute --command "echo hello" --execution-mode foreground --query '.result.stdout'
+shell-server-cli --branch main tool server-reattach --server-id '<server-id>' --config-updates '{"enhanced_mode_enabled":false,"llm_evaluation_enabled":false}'
 ```
 
 Help and schema inspection:
@@ -96,6 +97,13 @@ shell-server-cli --branch main tool shell-execute --command "echo hello" --execu
 ```
 
 `shell-server-cli` uses the same connection option resolution rules as `shell-server`.
+
+Runtime config synchronization on reattach:
+
+- `server_reattach` supports optional `config_updates` payload.
+- Updates are applied daemon-side without restart.
+- Invalid payloads return explicit validation errors (e.g. `invalid_config_payload:*`).
+- `info` response includes `configVersion` for effective daemon config tracking.
 
 ## Breaking Changes (v0.2.0)
 

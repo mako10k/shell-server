@@ -443,6 +443,13 @@ export class SecurityManager {
   }
 
   /**
+   * Check whether enhanced evaluator instance is initialized.
+   */
+  hasEnhancedEvaluator(): boolean {
+    return !!this.enhancedEvaluator;
+  }
+
+  /**
    * Check if command history enhancement is enabled
    */
   isCommandHistoryEnhanced(): boolean {

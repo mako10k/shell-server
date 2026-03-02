@@ -45,6 +45,7 @@ export type ServerLookupOptions = {
 
 export type ServerAttachOptions = {
   serverId: string;
+  configUpdates?: Record<string, unknown>;
 };
 
 export type ListAttachableOptions = {
@@ -70,7 +71,8 @@ const SOCKET_READY_INTERVAL_MS = 50;
 const SOCKET_REQUEST_TIMEOUT_MS = 1000;
 
 type DaemonRequest = {
-  action: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop';
+  action: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop' | 'reload_config' | 'config_get';
+  params?: Record<string, unknown>;
 };
 
 type DaemonResponse = {
@@ -87,6 +89,8 @@ type DaemonResponse = {
   branch?: string;
   socketPath?: string;
   childSocketPath?: string;
+  config?: Record<string, unknown>;
+  configVersion?: string;
 };
 
 type HeartbeatMessage = {
@@ -821,6 +825,21 @@ export class StubServerManager implements ServerManager {
         });
       }
 
+      if (this.isDaemonEnabled() && options.configUpdates && Object.keys(options.configUpdates).length > 0) {
+        const configUpdateResponse = await this.requestDaemon(entry.socketPath, {
+          action: 'reload_config',
+          params: options.configUpdates,
+        });
+
+        if (!configUpdateResponse.ok) {
+          throw new ShellServerError('SYSTEM_013', 'Daemon config reload failed', 'SYSTEM', {
+            serverId: options.serverId,
+            error: configUpdateResponse.error,
+            configUpdates: options.configUpdates,
+          });
+        }
+      }
+
       entry.attached = true;
       entry.detached = false;
       return {
@@ -856,6 +875,21 @@ export class StubServerManager implements ServerManager {
         detached: response.detached === true,
         attachSocket: socket,
       });
+
+      if (options.configUpdates && Object.keys(options.configUpdates).length > 0) {
+        const configUpdateResponse = await this.requestDaemon(socketPath, {
+          action: 'reload_config',
+          params: options.configUpdates,
+        });
+
+        if (!configUpdateResponse.ok) {
+          throw new ShellServerError('SYSTEM_013', 'Daemon config reload failed', 'SYSTEM', {
+            serverId: options.serverId,
+            error: configUpdateResponse.error,
+            configUpdates: options.configUpdates,
+          });
+        }
+      }
 
       return {
         serverId: options.serverId,

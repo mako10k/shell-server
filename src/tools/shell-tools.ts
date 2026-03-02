@@ -128,7 +128,7 @@ export class ShellTools {
         params.working_directory || this.processManager.getDefaultWorkingDirectory();
       let safetyEvaluation: SafetyEvaluationResult | null = null;
 
-      if (this.securityManager.isEnhancedModeEnabled()) {
+      if (this.securityManager.isEnhancedModeEnabled() && this.securityManager.isLLMEvaluationEnabled()) {
         // Evaluate command safety with enhanced evaluator
         safetyEvaluation = await this.securityManager.evaluateCommandSafetyByEnhancedEvaluator(
           params.command,

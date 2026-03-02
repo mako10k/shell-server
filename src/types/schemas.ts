@@ -266,6 +266,16 @@ export const ServerDetachParamsSchema = z.object({
 
 export const ServerReattachParamsSchema = z.object({
   server_id: z.string().min(1).describe('Server ID to attach to.'),
+  config_updates: z
+    .object({
+      enhanced_mode_enabled: z.boolean().optional(),
+      llm_evaluation_enabled: z.boolean().optional(),
+      elicitation_enabled: z.boolean().optional(),
+      enable_pattern_filtering: z.boolean().optional(),
+    })
+    .strict()
+    .optional()
+    .describe('Optional runtime security/evaluation config updates to apply on daemon reattach.'),
 });
 
 // File Operations

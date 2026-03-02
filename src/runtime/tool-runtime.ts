@@ -181,7 +181,14 @@ export async function dispatchToolCall(
     }
     case 'server_reattach': {
       const serverId = typeof paramRecord['server_id'] === 'string' ? String(paramRecord['server_id']) : '';
-      return serverManager.reattach({ serverId });
+      const rawConfigUpdates = paramRecord['config_updates'];
+      const configUpdates = rawConfigUpdates && typeof rawConfigUpdates === 'object'
+        ? (rawConfigUpdates as Record<string, unknown>)
+        : undefined;
+      return serverManager.reattach({
+        serverId,
+        ...(configUpdates ? { configUpdates } : {}),
+      });
     }
     default:
       throw new Error(`Unsupported tool: ${toolName}`);
