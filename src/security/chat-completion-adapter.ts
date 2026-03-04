@@ -137,9 +137,11 @@ export class CCCToMCPCMAdapter {
     let content: string | null = null;
     let finishReason: 'stop' | 'length' | 'tool_calls' = 'stop';
 
+    const normalizedToolCalls = this.extractToolCallsFromMCPResponse(mcpResponse);
+
     // Prefer explicit tool_calls bridged from MCP/native sampling responses.
-    if (mcpResponse.tool_calls && mcpResponse.tool_calls.length > 0) {
-      toolCalls = mcpResponse.tool_calls;
+    if (normalizedToolCalls.length > 0) {
+      toolCalls = normalizedToolCalls;
       finishReason = 'tool_calls';
       content = null;
     } else if (mcpResponse.content.type === 'text') {
@@ -193,6 +195,85 @@ export class CCCToMCPCMAdapter {
     CCCResponseSchema.parse(cccResponse);
 
     return cccResponse;
+  }
+
+  private extractToolCallsFromMCPResponse(mcpResponse: Awaited<ReturnType<CreateMessageCallback>>): Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> {
+    const responseRecord = this.isValidObject(mcpResponse)
+      ? mcpResponse as Record<string, unknown>
+      : {};
+
+    const directToolCalls = this.parseToolCallsArray(responseRecord['tool_calls'] ?? responseRecord['toolCalls']);
+    if (directToolCalls.length > 0) {
+      return directToolCalls;
+    }
+
+    const messageRecord = this.isValidObject(responseRecord['message'])
+      ? responseRecord['message'] as Record<string, unknown>
+      : null;
+
+    if (messageRecord) {
+      const nestedToolCalls = this.parseToolCallsArray(messageRecord['tool_calls'] ?? messageRecord['toolCalls']);
+      if (nestedToolCalls.length > 0) {
+        return nestedToolCalls;
+      }
+
+      const nestedNativeToolUses = this.extractNativeToolUseFromContent(messageRecord['content']);
+      if (nestedNativeToolUses.length > 0) {
+        return nestedNativeToolUses;
+      }
+    }
+
+    return this.extractNativeToolUseFromContent(responseRecord['content']);
+  }
+
+  private extractNativeToolUseFromContent(content: unknown): Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> {
+    const parts = Array.isArray(content) ? content : [content];
+    const calls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
+
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index];
+      if (!this.isValidObject(part)) {
+        continue;
+      }
+
+      const record = part as Record<string, unknown>;
+      const typeRaw = this.extractStringValue(record['type'])?.toLowerCase();
+
+      const isNativeToolUse = typeRaw === 'tool_use' || typeRaw === 'tool-use' || typeRaw === 'tooluse';
+      if (!isNativeToolUse) {
+        continue;
+      }
+
+      const functionRecord = this.isValidObject(record['function'])
+        ? record['function'] as Record<string, unknown>
+        : null;
+
+      const name = this.extractStringValue(record['name'])
+        || this.extractStringValue(record['tool_name'])
+        || this.extractStringValue(record['toolName'])
+        || (functionRecord ? this.extractStringValue(functionRecord['name']) : null);
+
+      if (!name) {
+        continue;
+      }
+
+      const rawArgs = record['input'] ?? record['arguments'] ?? record['args'] ?? (functionRecord ? functionRecord['arguments'] : undefined);
+      const id = this.extractStringValue(record['id'])
+        || this.extractStringValue(record['tool_use_id'])
+        || this.extractStringValue(record['toolUseId'])
+        || this.generateCallId();
+
+      calls.push({
+        id,
+        type: 'function',
+        function: {
+          name,
+          arguments: this.extractArguments(rawArgs ?? {}),
+        },
+      });
+    }
+
+    return calls;
   }
 
   /**
@@ -577,17 +658,18 @@ export function createMessageCallbackFromMCPServer(server: Server): CreateMessag
           }
 
           const record = part as Record<string, unknown>;
-          if (record['type'] !== 'tool_use') {
+          const typeRaw = typeof record['type'] === 'string' ? record['type'].toLowerCase() : '';
+          if (typeRaw !== 'tool_use' && typeRaw !== 'tool-use' && typeRaw !== 'tooluse') {
             continue;
           }
 
-          const rawName = record['name'];
+          const rawName = record['name'] ?? record['tool_name'] ?? record['toolName'];
           if (typeof rawName !== 'string' || rawName.length === 0) {
             continue;
           }
 
-          const rawInput = record['input'];
-          const rawId = record['id'];
+          const rawInput = record['input'] ?? record['arguments'] ?? record['args'];
+          const rawId = record['id'] ?? record['tool_use_id'] ?? record['toolUseId'];
 
           calls.push({
             id: typeof rawId === 'string' && rawId.length > 0 ? rawId : `call_${index}`,
@@ -678,8 +760,9 @@ export function createMessageCallbackFromMCPServer(server: Server): CreateMessag
       if (result.stopReason) {
         response.stopReason = result.stopReason;
       }
-      if (result['tool_calls']) {
-        const toolCalls = result['tool_calls'] as Array<{
+      const directToolCalls = result['tool_calls'] ?? result['toolCalls'];
+      if (directToolCalls) {
+        const toolCalls = directToolCalls as Array<{
           type: 'function';
           function: { name: string; arguments: string; };
         }>;
