@@ -22,6 +22,25 @@ All notable changes to this project are documented in this file.
 ### Notes
 - Release notes and supplements (migration steps, known limitations, etc.)
 
+## [0.3.0] - 2026-03-04
+
+### Added
+- Added queued concurrency handling that waits for an available slot within the foreground wait budget before failing.
+- Added `SHELL_SERVER_MAX_CONCURRENT_PROCESSES` to configure max concurrent executions (default: 8).
+- Added regression coverage for concurrency-limit behavior and adaptive queue waiting.
+
+### Changed
+- Simplified `shell_execute` API by removing external `execution_mode` and introducing `foreground_wait_seconds`.
+- Changed timeout contract to optional `execution_timeout_seconds` (request timeout disabled when omitted/null).
+- Unified effective timeout handling to respect policy caps when request timeout is provided.
+
+### Fixed
+- Improved over-limit diagnostics with actionable stop candidates and English next-step guidance.
+- Updated CLI E2E coverage and examples to match the new execution parameter model.
+
+### Notes
+- Compatibility update: native `tool_use` and camelCase `toolCalls` adapter handling was validated and remains covered by compat tests.
+
 ## [0.2.4] - 2026-02-18
 
 ### Changed
