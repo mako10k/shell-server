@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import {
-  ExecutionModeSchema,
   ShellTypeSchema,
   ProcessSignalSchema,
   OutputTypeSchema,
@@ -24,9 +23,15 @@ export const ShellExecuteParamsSchema = z
       .describe(
         'Optional comment from the LLM client explaining the intent or context behind this command execution. This helps the safety evaluator understand the broader context, but will be treated as advisory only and not blindly trusted.'
       ),
-    execution_mode: ExecutionModeSchema.default('adaptive').describe(
-      'How the command should be executed: "foreground" (wait for completion), "background" (run async), "detached" (fire-and-forget), "adaptive" (start foreground, switch to background for long-running commands)'
-    ),
+    foreground_wait_seconds: z
+      .number()
+      .int()
+      .min(1)
+      .max(300)
+      .default(10)
+      .describe(
+        'Foreground wait window (1-300s). The server waits this long for completion, then returns running status if the command is still active.'
+      ),
     working_directory: z
       .string()
       .optional()
@@ -48,33 +53,15 @@ export const ShellExecuteParamsSchema = z
       .describe(
         'Output ID from previous command execution to use as input. Alternative to input_data for pipeline operations.'
       ),
-    timeout_seconds: z
+    execution_timeout_seconds: z
       .number()
       .int()
       .min(1)
       .max(3600)
-      .default(60)
+      .nullable()
+      .optional()
       .describe(
-        'Global timeout (1-3600s). Default: 60s.\n'
-        + 'Per execution_mode (effective limits before execution starts):\n'
-        + '• foreground: Schema allows 1-3600s, but the default security policy caps runs at 300s. Setting timeout_seconds above 300s raises TIMEOUT_LIMIT_EXCEEDED unless max_execution_time is increased via security_set_restrictions.\n'
-        + '• background: 1-3600s. Intended for >300s runs; still subject to the same security cap (300s by default) unless raised.\n'
-        + '• detached: 1-3600s. Shares the security cap behavior with background.\n'
-        + '• adaptive: 1-3600s total cap. The initial foreground phase also respects foreground_timeout_seconds (≤300s) and the security cap.\n'
-        + 'Guidance: For long-running tasks (>300s), raise max_execution_time or use background/adaptive modes.'
-      ),
-    foreground_timeout_seconds: z
-      .number()
-      .int()
-      .min(1)
-      .max(300)
-      .default(15)
-      .describe(
-        'Initial foreground window for adaptive mode (1-300s).\n'
-        + 'Behavior by execution_mode:\n'
-        + '• adaptive: Duration to remain in foreground before automatically switching to background if the command is still running. Must be ≤ timeout_seconds.\n'
-        + '• foreground: Does not trigger background switching (value is effectively unused for switching). Use background/adaptive for >300s scenarios.\n'
-        + '• background/detached: Ignored.'
+        'Optional hard timeout (1-3600s). If omitted or null, request-level timeout is disabled and only policy-level limits apply.'
       ),
     return_partial_on_timeout: z
       .boolean()
@@ -123,14 +110,6 @@ export const ShellExecuteParamsSchema = z
       ),
   })
   .strict()
-  // Cross-field validations for timeout relationships
-  .refine(
-    (data) => data.execution_mode !== 'adaptive' || (data.foreground_timeout_seconds ?? 15) <= (data.timeout_seconds ?? 60),
-    {
-      message: 'foreground_timeout_seconds must be less than or equal to timeout_seconds in adaptive mode.',
-      path: ['foreground_timeout_seconds'],
-    }
-  )
   .refine((data) => !(data.input_data && data.input_output_id), {
     message: 'input_data and input_output_id cannot be specified simultaneously.',
     path: ['input_data', 'input_output_id'],

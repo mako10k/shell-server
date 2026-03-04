@@ -105,12 +105,17 @@ export class SecurityError extends ShellServerError {
 }
 
 export class ResourceLimitError extends ShellServerError {
-  constructor(resource: string, limit: number, requestId?: string) {
+  constructor(
+    resource: string,
+    limit: number,
+    requestId?: string,
+    details?: Record<string, unknown>
+  ) {
     super(
       'RESOURCE_005',
       `${resource} limit of ${limit} reached`,
       'RESOURCE',
-      { resource, limit },
+      { resource, limit, ...(details ?? {}) },
       requestId
     );
   }

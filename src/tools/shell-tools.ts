@@ -181,29 +181,35 @@ export class ShellTools {
 
       // Traditional security checks (still performed)
       this.securityManager.auditCommand(params.command, params.working_directory);
-      this.securityManager.validateExecutionTime(params.timeout_seconds);
 
-      // Check max value for foreground_timeout_seconds
-      if (
-        params.execution_mode === 'foreground' &&
-        typeof params.foreground_timeout_seconds === 'number' &&
-        params.foreground_timeout_seconds > 300
-      ) {
-        throw new MCPShellError(
-          'TIMEOUT_LIMIT_EXCEEDED',
-          `foreground_timeout_seconds (${params.foreground_timeout_seconds}) exceeds the maximum allowed (300 seconds). For timeouts above 300 seconds, use execution_mode 'background' or 'adaptive'.`,
-          'PARAM'
-        );
+      const restrictions = this.securityManager.getRestrictions();
+      const policyTimeoutSeconds = restrictions?.active
+        ? restrictions.max_execution_time
+        : undefined;
+      const requestedTimeoutSeconds = params.execution_timeout_seconds ?? undefined;
+
+      if (requestedTimeoutSeconds !== undefined) {
+        this.securityManager.validateExecutionTime(requestedTimeoutSeconds);
       }
+
+      // Effective timeout: request timeout if provided, additionally capped by policy timeout.
+      const effectiveTimeoutSeconds = requestedTimeoutSeconds !== undefined
+        ? (policyTimeoutSeconds !== undefined
+            ? Math.min(requestedTimeoutSeconds, policyTimeoutSeconds)
+            : requestedTimeoutSeconds)
+        : policyTimeoutSeconds;
 
       const executionOptions: ExecutionOptions = {
         command: params.command,
-        executionMode: params.execution_mode,
-        timeoutSeconds: params.timeout_seconds,
-        foregroundTimeoutSeconds: params.foreground_timeout_seconds,
+        // Keep process-manager internals on adaptive flow while external API is simplified.
+        executionMode: 'adaptive',
+        foregroundTimeoutSeconds: params.foreground_wait_seconds,
         maxOutputSize: params.max_output_size,
         captureStderr: params.capture_stderr,
         returnPartialOnTimeout: params.return_partial_on_timeout,
+        ...(effectiveTimeoutSeconds !== undefined
+          ? { timeoutSeconds: effectiveTimeoutSeconds }
+          : {}),
       };
 
       // Add optional properties (only if not undefined)
@@ -249,10 +255,12 @@ export class ShellTools {
         const remote = new RemoteProcessService();
         const req: import('../core/remote-process-service.js').RemoteExecStartRequest = {
           command: executionOptions.command,
-          timeout_seconds: executionOptions.timeoutSeconds,
           capture_stderr: executionOptions.captureStderr,
           max_output_size: executionOptions.maxOutputSize,
         };
+        if (executionOptions.timeoutSeconds !== undefined) {
+          req.timeout_seconds = executionOptions.timeoutSeconds;
+        }
         if (executionOptions.workingDirectory !== undefined) {
           req.working_directory = executionOptions.workingDirectory;
         }

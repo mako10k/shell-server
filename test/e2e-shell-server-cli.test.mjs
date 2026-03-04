@@ -86,7 +86,7 @@ test('shell-server-cli E2E: daemon + tool + query + help', async (t) => {
     'tool',
     'shell-execute',
     '--input-json',
-    '{"command":"echo e2e-json","execution_mode":"foreground"}',
+    '{"command":"echo e2e-json","foreground_wait_seconds":10}',
     '--query',
     '.result.stdout',
   ]);
