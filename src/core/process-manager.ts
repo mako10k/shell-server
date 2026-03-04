@@ -37,7 +37,7 @@ export interface ExecutionOptions {
   environmentVariables?: EnvironmentVariables;
   inputData?: string;
   inputOutputId?: string;
-  timeoutSeconds: number;
+  timeoutSeconds?: number;
   foregroundTimeoutSeconds?: number;
   maxOutputSize: number;
   captureStderr: boolean;
@@ -76,12 +76,94 @@ export class ProcessManager {
   private realtimeStreamSubscriber: RealtimeStreamSubscriber | undefined;
   private enableStreaming: boolean = false; // Feature Flag
 
+  private buildConcurrencyStopCandidates(limit = 5): Array<{
+    execution_id: string;
+    process_id?: number;
+    command: string;
+    runtime_seconds?: number;
+    status: string;
+    suggested_action: {
+      tool: 'process_kill';
+      parameters: {
+        process_id?: number;
+        signal: 'TERM';
+        force: false;
+      };
+    };
+  }> {
+    const now = Date.now();
+    return Array.from(this.executions.values())
+      .filter((exec) => exec.status === 'running')
+      .sort((a, b) => {
+        const aStart = a.started_at ? new Date(a.started_at).getTime() : Number.MAX_SAFE_INTEGER;
+        const bStart = b.started_at ? new Date(b.started_at).getTime() : Number.MAX_SAFE_INTEGER;
+        return aStart - bStart;
+      })
+      .slice(0, limit)
+      .map((exec) => {
+        const startedAtMs = exec.started_at ? new Date(exec.started_at).getTime() : undefined;
+        const runtimeSeconds = startedAtMs && Number.isFinite(startedAtMs)
+          ? Math.max(0, Math.floor((now - startedAtMs) / 1000))
+          : undefined;
+
+        return {
+          execution_id: exec.execution_id,
+          ...(exec.process_id !== undefined ? { process_id: exec.process_id } : {}),
+          command: exec.command.length > 120 ? `${exec.command.slice(0, 117)}...` : exec.command,
+          ...(runtimeSeconds !== undefined ? { runtime_seconds: runtimeSeconds } : {}),
+          status: exec.status,
+          suggested_action: {
+            tool: 'process_kill',
+            parameters: {
+              ...(exec.process_id !== undefined ? { process_id: exec.process_id } : {}),
+              signal: 'TERM',
+              force: false,
+            },
+          },
+        };
+      });
+  }
+  private getRunningExecutionCount(): number {
+    return Array.from(this.executions.values()).filter((exec) => exec.status === 'running').length;
+  }
+
+  private async waitForExecutionSlot(maxWaitMs: number, pollIntervalMs = 100): Promise<boolean> {
+    if (this.getRunningExecutionCount() < this.maxConcurrentProcesses) {
+      return true;
+    }
+
+    if (maxWaitMs <= 0) {
+      return false;
+    }
+
+    const deadline = Date.now() + maxWaitMs;
+    while (Date.now() < deadline) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, Math.min(pollIntervalMs, Math.max(1, deadline - Date.now())));
+      });
+
+      if (this.getRunningExecutionCount() < this.maxConcurrentProcesses) {
+        return true;
+      }
+    }
+
+    return this.getRunningExecutionCount() < this.maxConcurrentProcesses;
+  }
+
   constructor(
-    maxConcurrentProcesses = 50,
+    maxConcurrentProcesses = 8,
     outputDir = '/tmp/mcp-shell-outputs',
     fileManager?: FileManager
   ) {
-    this.maxConcurrentProcesses = maxConcurrentProcesses;
+    const envMaxConcurrentRaw = process.env['SHELL_SERVER_MAX_CONCURRENT_PROCESSES'];
+    const envMaxConcurrentParsed = envMaxConcurrentRaw
+      ? Number.parseInt(envMaxConcurrentRaw, 10)
+      : NaN;
+    const resolvedMaxConcurrent = Number.isFinite(envMaxConcurrentParsed) && envMaxConcurrentParsed > 0
+      ? envMaxConcurrentParsed
+      : maxConcurrentProcesses;
+
+    this.maxConcurrentProcesses = resolvedMaxConcurrent;
     this.outputDir = outputDir;
     this.fileManager = fileManager;
     this.defaultWorkingDirectory = process.env['SHELL_SERVER_DEFAULT_WORKDIR'] || process.cwd();
@@ -186,31 +268,71 @@ export class ProcessManager {
   }
 
   async executeCommand(options: ExecutionOptions): Promise<ExecutionInfo> {
-    // Check concurrent execution limit
-    const runningProcesses = Array.from(this.executions.values()).filter(
-      (exec) => exec.status === 'running'
-    ).length;
+    let effectiveOptions: ExecutionOptions = { ...options };
 
+    // For adaptive mode, when all slots are occupied, wait for a free slot
+    // using the same foreground wait budget requested by the caller.
+    const runningProcesses = this.getRunningExecutionCount();
     if (runningProcesses >= this.maxConcurrentProcesses) {
-      throw new ResourceLimitError('concurrent processes', this.maxConcurrentProcesses);
+      const queueWaitBudgetSeconds = effectiveOptions.executionMode === 'adaptive'
+        ? (effectiveOptions.foregroundTimeoutSeconds ?? 10)
+        : 0;
+      const queueWaitBudgetMs = Math.max(0, Math.floor(queueWaitBudgetSeconds * 1000));
+      const waitStartedAt = Date.now();
+      const acquired = await this.waitForExecutionSlot(queueWaitBudgetMs);
+      const waitedMs = Date.now() - waitStartedAt;
+
+      if (!acquired) {
+        const currentRunning = this.getRunningExecutionCount();
+        const stopCandidates = this.buildConcurrencyStopCandidates();
+        throw new ResourceLimitError(
+          'concurrent processes',
+          this.maxConcurrentProcesses,
+          undefined,
+          {
+            code: 'CONCURRENCY_LIMIT_EXCEEDED',
+            reason:
+              `Concurrent execution limit reached (${currentRunning}/${this.maxConcurrentProcesses}) and no slot became available within ${Math.floor(waitedMs / 1000)}s queue wait budget.`,
+            running_count: currentRunning,
+            limit: this.maxConcurrentProcesses,
+            queue_wait_budget_seconds: queueWaitBudgetSeconds,
+            waited_seconds: Math.floor(waitedMs / 1000),
+            stop_candidates: stopCandidates,
+            next_steps: [
+              'Call process_list with status_filter="running" to inspect active executions.',
+              'Stop one or more long-running commands via process_kill, then retry shell_execute.',
+            ],
+          }
+        );
+      }
+
+      if (effectiveOptions.executionMode === 'adaptive') {
+        const originalForegroundWaitSeconds = effectiveOptions.foregroundTimeoutSeconds ?? 10;
+        const remainingForegroundWaitSeconds = Math.max(
+          1,
+          Math.floor((originalForegroundWaitSeconds * 1000 - waitedMs) / 1000)
+        );
+        effectiveOptions = {
+          ...effectiveOptions,
+          foregroundTimeoutSeconds: remainingForegroundWaitSeconds,
+        };
+      }
     }
 
     // Prepare input data when input_output_id is specified
-    let resolvedInputData: string | undefined = options.inputData;
+    let resolvedInputData: string | undefined = effectiveOptions.inputData;
     let inputStream: StreamingPipelineReader | undefined = undefined;
 
-    if (options.inputOutputId) {
+    if (effectiveOptions.inputOutputId) {
       if (!this.fileManager) {
         throw new ExecutionError('FileManager is not available for input_output_id processing', {
-          inputOutputId: options.inputOutputId,
+          inputOutputId: effectiveOptions.inputOutputId,
         });
       }
 
-      // Identify execution ID from output_id
-      const sourceExecutionId = this.findExecutionIdByOutputId(options.inputOutputId);
+      const sourceExecutionId = this.findExecutionIdByOutputId(effectiveOptions.inputOutputId);
 
       if (sourceExecutionId && this.realtimeStreamSubscriber) {
-        // For active processes: use StreamingPipelineReader
         const streamState = this.realtimeStreamSubscriber.getStreamState(sourceExecutionId);
         if (streamState && streamState.isActive) {
           console.error(
@@ -219,28 +341,27 @@ export class ProcessManager {
           inputStream = new StreamingPipelineReader(
             this.fileManager,
             this.realtimeStreamSubscriber,
-            options.inputOutputId,
+            effectiveOptions.inputOutputId,
             sourceExecutionId
           );
         }
       }
 
-      // If not active (or on failure), fall back to traditional file read
       if (!inputStream) {
         try {
-          console.error(`ProcessManager: Using traditional file read for ${options.inputOutputId}`);
+          console.error(`ProcessManager: Using traditional file read for ${effectiveOptions.inputOutputId}`);
           const result = await this.fileManager.readFile(
-            options.inputOutputId,
+            effectiveOptions.inputOutputId,
             0,
-            100 * 1024 * 1024, // read up to 100MB
+            100 * 1024 * 1024,
             'utf-8'
           );
           resolvedInputData = result.content;
         } catch (error) {
           throw new ExecutionError(
-            `Failed to read input from output_id: ${options.inputOutputId}`,
+            `Failed to read input from output_id: ${effectiveOptions.inputOutputId}`,
             {
-              inputOutputId: options.inputOutputId,
+              inputOutputId: effectiveOptions.inputOutputId,
               originalError: String(error),
             }
           );
@@ -251,11 +372,10 @@ export class ProcessManager {
     const executionId = generateId();
     const startTime = getCurrentTimestamp();
 
-    // Initialize execution info
-    const resolvedWorkingDirectory = this.resolveWorkingDirectory(options.workingDirectory);
+    const resolvedWorkingDirectory = this.resolveWorkingDirectory(effectiveOptions.workingDirectory);
     const executionInfo: ExecutionInfo = {
       execution_id: executionId,
-      command: options.command,
+      command: effectiveOptions.command,
       status: 'running',
       working_directory: resolvedWorkingDirectory,
       default_working_directory: this.defaultWorkingDirectory,
@@ -264,35 +384,32 @@ export class ProcessManager {
       started_at: startTime,
     };
 
-    if (options.environmentVariables) {
-      executionInfo.environment_variables = options.environmentVariables;
+    if (effectiveOptions.environmentVariables) {
+      executionInfo.environment_variables = effectiveOptions.environmentVariables;
     }
 
     this.executions.set(executionId, executionInfo);
 
-    // If new terminal creation is requested
-    if (options.createTerminal && this.terminalManager) {
+    if (effectiveOptions.createTerminal && this.terminalManager) {
       try {
         const terminalOptions: TerminalOptions = {
           sessionName: `exec-${executionId}`,
-          shellType: (options.terminalShell as TerminalOptions['shellType']) || 'bash',
-          dimensions: options.terminalDimensions || { width: 80, height: 24 },
+          shellType: (effectiveOptions.terminalShell as TerminalOptions['shellType']) || 'bash',
+          dimensions: effectiveOptions.terminalDimensions || { width: 80, height: 24 },
           autoSaveHistory: true,
         };
-        if (options.workingDirectory) {
-          terminalOptions.workingDirectory = options.workingDirectory;
+        if (effectiveOptions.workingDirectory) {
+          terminalOptions.workingDirectory = effectiveOptions.workingDirectory;
         }
-        if (options.environmentVariables) {
-          terminalOptions.environmentVariables = options.environmentVariables;
+        if (effectiveOptions.environmentVariables) {
+          terminalOptions.environmentVariables = effectiveOptions.environmentVariables;
         }
 
         const terminalInfo = await this.terminalManager.createTerminal(terminalOptions);
         executionInfo.terminal_id = terminalInfo.terminal_id;
 
-        // Send command to terminal
-        this.terminalManager.sendInput(terminalInfo.terminal_id, options.command, true);
+        this.terminalManager.sendInput(terminalInfo.terminal_id, effectiveOptions.command, true);
 
-        // Update execution info
         executionInfo.status = 'completed';
         executionInfo.completed_at = getCurrentTimestamp();
         this.executions.set(executionId, executionInfo);
@@ -309,19 +426,17 @@ export class ProcessManager {
     }
 
     try {
-      // Prepare execution options
-      const { inputOutputId: _inputOutputId, ...baseOptions } = options;
+      const { inputOutputId: _inputOutputId, ...baseOptions } = effectiveOptions;
       const updatedOptions: ExecutionOptions = {
         ...baseOptions,
         ...(resolvedInputData !== undefined && { inputData: resolvedInputData }),
       };
 
-      // Special handling when StreamingPipelineReader exists
       if (inputStream) {
         return await this.executeCommandWithInputStream(executionId, updatedOptions, inputStream);
       }
 
-      switch (options.executionMode) {
+      switch (effectiveOptions.executionMode) {
         case 'foreground':
           return await this.executeForegroundCommand(executionId, updatedOptions);
         case 'adaptive':
@@ -331,10 +446,9 @@ export class ProcessManager {
         case 'detached':
           return await this.executeDetachedCommand(executionId, updatedOptions);
         default:
-          throw new ExecutionError('Unsupported execution mode', { mode: options.executionMode });
+          throw new ExecutionError('Unsupported execution mode', { mode: effectiveOptions.executionMode });
       }
     } catch (error) {
-      // Update execution info on error
       const updatedInfo = this.executions.get(executionId);
       if (updatedInfo) {
         updatedInfo.status = 'failed';
@@ -481,19 +595,23 @@ export class ProcessManager {
       });
 
       // Timeout handling
-      const timeout = setTimeout(() => {
-        console.error(`Process timeout for ${executionId}`);
-        child.kill('SIGTERM');
+      const timeout = options.timeoutSeconds !== undefined
+        ? setTimeout(() => {
+            console.error(`Process timeout for ${executionId}`);
+            child.kill('SIGTERM');
 
-        setTimeout(() => {
-          if (!child.killed) {
-            child.kill('SIGKILL');
-          }
-        }, 5000);
-      }, options.timeoutSeconds * 1000);
+            setTimeout(() => {
+              if (!child.killed) {
+                child.kill('SIGKILL');
+              }
+            }, 5000);
+          }, options.timeoutSeconds * 1000)
+        : undefined;
 
       child.on('close', () => {
-        clearTimeout(timeout);
+        if (timeout) {
+          clearTimeout(timeout);
+        }
       });
     });
   }
@@ -526,54 +644,56 @@ export class ProcessManager {
       }
 
       // Set timeout
-      const timeout = setTimeout(async () => {
-        childProcess.kill('SIGTERM');
-        setTimeout(() => {
-          if (!childProcess.killed) {
-            childProcess.kill('SIGKILL');
-          }
-        }, 5000);
+      const timeout = options.timeoutSeconds !== undefined
+        ? setTimeout(async () => {
+            childProcess.kill('SIGTERM');
+            setTimeout(() => {
+              if (!childProcess.killed) {
+                childProcess.kill('SIGKILL');
+              }
+            }, 5000);
 
-        const executionTime = Date.now() - startTime;
-        const executionInfo = this.executions.get(executionId);
-        if (executionInfo) {
-          executionInfo.status = 'timeout';
-          executionInfo.stdout = sanitizeString(stdout);
-          executionInfo.stderr = sanitizeString(stderr);
-          executionInfo.completed_at = getCurrentTimestamp();
-          executionInfo.execution_time_ms = executionTime;
-          if (childProcess.pid !== undefined) {
-            executionInfo.process_id = childProcess.pid;
-          }
+            const executionTime = Date.now() - startTime;
+            const executionInfo = this.executions.get(executionId);
+            if (executionInfo) {
+              executionInfo.status = 'timeout';
+              executionInfo.stdout = sanitizeString(stdout);
+              executionInfo.stderr = sanitizeString(stderr);
+              executionInfo.completed_at = getCurrentTimestamp();
+              executionInfo.execution_time_ms = executionTime;
+              if (childProcess.pid !== undefined) {
+                executionInfo.process_id = childProcess.pid;
+              }
 
-          // Save output to FileManager (regardless of size)
-          let outputFileId: string | undefined;
-          try {
-            outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
-            executionInfo.output_id = outputFileId;
-          } catch (error) {
-            // Record file-save failures as critical errors and include them in execution info
-            console.error(
-              `[CRITICAL] Failed to save output file for execution ${executionId}:`,
-              error
-            );
-            executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
-          }
+              // Save output to FileManager (regardless of size)
+              let outputFileId: string | undefined;
+              try {
+                outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+                executionInfo.output_id = outputFileId;
+              } catch (error) {
+                // Record file-save failures as critical errors and include them in execution info
+                console.error(
+                  `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+                  error
+                );
+                executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
+              }
 
-          // Set detailed output status
-          this.setOutputStatus(executionInfo, outputTruncated, 'timeout', outputFileId);
+              // Set detailed output status
+              this.setOutputStatus(executionInfo, outputTruncated, 'timeout', outputFileId);
 
-          this.executions.set(executionId, executionInfo);
+              this.executions.set(executionId, executionInfo);
 
-          // Return partial result when return_partial_on_timeout is true
-          if (options.returnPartialOnTimeout) {
-            resolve(executionInfo);
-            return;
-          }
-        }
+              // Return partial result when return_partial_on_timeout is true
+              if (options.returnPartialOnTimeout) {
+                resolve(executionInfo);
+                return;
+              }
+            }
 
-        reject(new TimeoutError(options.timeoutSeconds));
-      }, options.timeoutSeconds * 1000);
+            reject(new TimeoutError(options.timeoutSeconds ?? 0));
+          }, options.timeoutSeconds * 1000)
+        : undefined;
 
       // Send stdin
       if (options.inputData) {
@@ -609,7 +729,9 @@ export class ProcessManager {
 
       // Handle process close
       childProcess.on('close', async (code) => {
-        clearTimeout(timeout);
+        if (timeout) {
+          clearTimeout(timeout);
+        }
         if (childProcess.pid) {
           this.processes.delete(childProcess.pid);
         }
@@ -722,46 +844,48 @@ export class ProcessManager {
       }, foregroundTimeout * 1000);
 
       // Set final timeout
-      const finalTimeoutHandle = setTimeout(async () => {
-        childProcess.kill('SIGTERM');
-        setTimeout(() => {
-          if (!childProcess.killed) {
-            childProcess.kill('SIGKILL');
-          }
-        }, 5000);
+      const finalTimeoutHandle = options.timeoutSeconds !== undefined
+        ? setTimeout(async () => {
+            childProcess.kill('SIGTERM');
+            setTimeout(() => {
+              if (!childProcess.killed) {
+                childProcess.kill('SIGKILL');
+              }
+            }, 5000);
 
-        const executionInfo = this.executions.get(executionId);
-        if (executionInfo) {
-          executionInfo.status = 'timeout';
-          executionInfo.stdout = sanitizeString(stdout);
-          executionInfo.stderr = sanitizeString(stderr);
-          executionInfo.output_truncated = outputTruncated;
-          executionInfo.completed_at = getCurrentTimestamp();
-          executionInfo.execution_time_ms = Date.now() - startTime;
+            const executionInfo = this.executions.get(executionId);
+            if (executionInfo) {
+              executionInfo.status = 'timeout';
+              executionInfo.stdout = sanitizeString(stdout);
+              executionInfo.stderr = sanitizeString(stderr);
+              executionInfo.output_truncated = outputTruncated;
+              executionInfo.completed_at = getCurrentTimestamp();
+              executionInfo.execution_time_ms = Date.now() - startTime;
 
-          // Save output to FileManager
-          try {
-            const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
-            executionInfo.output_id = outputFileId;
-          } catch (error) {
-            // Record file-save failures as critical errors and include them in execution info
-            console.error(
-              `[CRITICAL] Failed to save output file for execution ${executionId}:`,
-              error
-            );
-            executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
-          }
+              // Save output to FileManager
+              try {
+                const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+                executionInfo.output_id = outputFileId;
+              } catch (error) {
+                // Record file-save failures as critical errors and include them in execution info
+                console.error(
+                  `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+                  error
+                );
+                executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
+              }
 
-          this.executions.set(executionId, executionInfo);
+              this.executions.set(executionId, executionInfo);
 
-          if (returnPartialOnTimeout) {
-            resolve(executionInfo);
-            return;
-          }
-        }
+              if (returnPartialOnTimeout) {
+                resolve(executionInfo);
+                return;
+              }
+            }
 
-        reject(new TimeoutError(options.timeoutSeconds));
-      }, options.timeoutSeconds * 1000);
+            reject(new TimeoutError(options.timeoutSeconds ?? 0));
+          }, options.timeoutSeconds * 1000)
+        : undefined;
 
       // Function to transition to background mode
       const transitionToBackground = async () => {
@@ -809,12 +933,14 @@ export class ProcessManager {
           this.executions.set(executionId, executionInfo);
 
           // Configure continued background handling (adaptive mode only)
+          const remainingTimeoutSeconds = options.timeoutSeconds !== undefined
+            ? Math.max(1, options.timeoutSeconds - Math.floor((Date.now() - startTime) / 1000))
+            : undefined;
           this.handleAdaptiveBackgroundTransition(executionId, childProcess, {
             ...options,
-            timeoutSeconds: Math.max(
-              1,
-              options.timeoutSeconds - Math.floor((Date.now() - startTime) / 1000)
-            ),
+            ...(remainingTimeoutSeconds !== undefined
+              ? { timeoutSeconds: remainingTimeoutSeconds }
+              : {}),
           });
 
           resolve(executionInfo);
@@ -868,7 +994,9 @@ export class ProcessManager {
       // Handle process close
       childProcess.on('close', async (code) => {
         clearTimeout(foregroundTimeoutHandle);
-        clearTimeout(finalTimeoutHandle);
+        if (finalTimeoutHandle) {
+          clearTimeout(finalTimeoutHandle);
+        }
         if (childProcess.pid) {
           this.processes.delete(childProcess.pid);
         }
@@ -912,7 +1040,9 @@ export class ProcessManager {
       // Error handling
       childProcess.on('error', (error) => {
         clearTimeout(foregroundTimeoutHandle);
-        clearTimeout(finalTimeoutHandle);
+        if (finalTimeoutHandle) {
+          clearTimeout(finalTimeoutHandle);
+        }
         if (childProcess.pid) {
           this.processes.delete(childProcess.pid);
         }
@@ -984,57 +1114,59 @@ export class ProcessManager {
     let stderr = '';
 
     // Set timeout (for background processes)
-    const timeout = setTimeout(async () => {
-      childProcess.kill('SIGTERM');
-      setTimeout(() => {
-        if (!childProcess.killed) {
-          childProcess.kill('SIGKILL');
-        }
-      }, 5000);
-
-      const executionInfo = this.executions.get(executionId);
-      if (executionInfo) {
-        executionInfo.status = 'timeout';
-        executionInfo.stdout = stdout;
-        executionInfo.stderr = stderr;
-        executionInfo.output_truncated = true;
-        executionInfo.completed_at = getCurrentTimestamp();
-        executionInfo.execution_time_ms = Date.now() - startTime;
-
-        // Save output to FileManager
-        try {
-          const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
-          executionInfo.output_id = outputFileId;
-        } catch (error) {
-          // Record file-save failures as critical errors and include them in execution info
-          console.error(
-            `[CRITICAL] Failed to save output file for execution ${executionId}:`,
-            error
-          );
-          executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
-        }
-
-        this.executions.set(executionId, executionInfo);
-
-        // Invoke timeout callback for background process
-        if (this.backgroundProcessCallbacks.onTimeout) {
-          setImmediate(async () => {
-            try {
-              const callback = this.backgroundProcessCallbacks.onTimeout;
-              if (callback) {
-                const result = callback(executionId, executionInfo);
-                if (result instanceof Promise) {
-                  await result;
-                }
-              }
-            } catch (callbackError) {
-              // Record callback errors in internal logs only
-              // console.error('Background process timeout callback error:', callbackError);
+    const timeout = options.timeoutSeconds !== undefined
+      ? setTimeout(async () => {
+          childProcess.kill('SIGTERM');
+          setTimeout(() => {
+            if (!childProcess.killed) {
+              childProcess.kill('SIGKILL');
             }
-          });
-        }
-      }
-    }, options.timeoutSeconds * 1000);
+          }, 5000);
+
+          const executionInfo = this.executions.get(executionId);
+          if (executionInfo) {
+            executionInfo.status = 'timeout';
+            executionInfo.stdout = stdout;
+            executionInfo.stderr = stderr;
+            executionInfo.output_truncated = true;
+            executionInfo.completed_at = getCurrentTimestamp();
+            executionInfo.execution_time_ms = Date.now() - startTime;
+
+            // Save output to FileManager
+            try {
+              const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+              executionInfo.output_id = outputFileId;
+            } catch (error) {
+              // Record file-save failures as critical errors and include them in execution info
+              console.error(
+                `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+                error
+              );
+              executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
+            }
+
+            this.executions.set(executionId, executionInfo);
+
+            // Invoke timeout callback for background process
+            if (this.backgroundProcessCallbacks.onTimeout) {
+              setImmediate(async () => {
+                try {
+                  const callback = this.backgroundProcessCallbacks.onTimeout;
+                  if (callback) {
+                    const result = callback(executionId, executionInfo);
+                    if (result instanceof Promise) {
+                      await result;
+                    }
+                  }
+                } catch (callbackError) {
+                  // Record callback errors in internal logs only
+                  // console.error('Background process timeout callback error:', callbackError);
+                }
+              });
+            }
+          }
+        }, options.timeoutSeconds * 1000)
+      : undefined;
 
     // Collect output
     childProcess.stdout?.on('data', (data: Buffer) => {
@@ -1049,7 +1181,9 @@ export class ProcessManager {
 
     // Handle process close
     childProcess.on('close', async (code) => {
-      clearTimeout(timeout);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
       if (childProcess.pid) {
         this.processes.delete(childProcess.pid);
       }
@@ -1097,7 +1231,9 @@ export class ProcessManager {
     });
 
     childProcess.on('error', (error) => {
-      clearTimeout(timeout);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
       if (childProcess.pid) {
         this.processes.delete(childProcess.pid);
       }
@@ -1136,27 +1272,31 @@ export class ProcessManager {
     options: ExecutionOptions
   ): void {
     // Set timeout (final timeout)
-    const timeout = setTimeout(async () => {
-      childProcess.kill('SIGTERM');
-      setTimeout(() => {
-        if (!childProcess.killed) {
-          childProcess.kill('SIGKILL');
-        }
-      }, 5000);
+    const timeout = options.timeoutSeconds !== undefined
+      ? setTimeout(async () => {
+          childProcess.kill('SIGTERM');
+          setTimeout(() => {
+            if (!childProcess.killed) {
+              childProcess.kill('SIGKILL');
+            }
+          }, 5000);
 
-      const executionInfo = this.executions.get(executionId);
-      if (executionInfo) {
-        executionInfo.status = 'timeout';
-        executionInfo.completed_at = getCurrentTimestamp();
+          const executionInfo = this.executions.get(executionId);
+          if (executionInfo) {
+            executionInfo.status = 'timeout';
+            executionInfo.completed_at = getCurrentTimestamp();
 
-        // Keep existing output (already captured in adaptive mode)
-        this.executions.set(executionId, executionInfo);
-      }
-    }, options.timeoutSeconds * 1000);
+            // Keep existing output (already captured in adaptive mode)
+            this.executions.set(executionId, executionInfo);
+          }
+        }, options.timeoutSeconds * 1000)
+      : undefined;
 
     // Handle process close
     childProcess.on('close', async (code) => {
-      clearTimeout(timeout);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
       if (childProcess.pid) {
         this.processes.delete(childProcess.pid);
       }
@@ -1196,7 +1336,9 @@ export class ProcessManager {
     });
 
     childProcess.on('error', (error) => {
-      clearTimeout(timeout);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
       if (childProcess.pid) {
         this.processes.delete(childProcess.pid);
       }

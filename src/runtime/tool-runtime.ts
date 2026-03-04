@@ -199,7 +199,7 @@ export function createShellToolRuntime(options: ShellToolRuntimeOptions = {}): S
   const fileManager = new FileManager();
   const configManager = new ConfigManager();
   const processManager = new ProcessManager(
-    options.maxConcurrentProcesses ?? 50,
+    options.maxConcurrentProcesses ?? 8,
     options.outputDir ?? '/tmp/mcp-shell-outputs',
     fileManager
   );

@@ -71,7 +71,7 @@ AWS CLI-style extensions:
 Examples:
 
 ```bash
-shell-server-cli --branch main tool shell-execute --input-json '{"command":"echo hello","execution_mode":"foreground"}'
+shell-server-cli --branch main tool shell-execute --input-json '{"command":"echo hello","foreground_wait_seconds":10}'
 shell-server-cli --branch main tool shell-execute --command "echo hello" --execution-mode foreground --query '.result.stdout'
 shell-server-cli --branch main tool server-reattach --server-id '<server-id>' --config-updates '{"enhanced_mode_enabled":false,"llm_evaluation_enabled":false}'
 ```
@@ -187,6 +187,7 @@ Detailed fixed procedure for automation/Copilot is documented in `.github/copilo
 - `SHELL_SERVER_DAEMON_SOCKET` (socket path override)
 - `SHELL_SERVER_DAEMON_CWD` (working directory override)
 - `SHELL_SERVER_DAEMON_BRANCH` (branch namespace override)
+- `SHELL_SERVER_MAX_CONCURRENT_PROCESSES` (max concurrent executions; default `8`)
 
 ## Evaluator Errors (HTTP Analogy)
 

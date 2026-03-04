@@ -18,7 +18,7 @@ async function main() {
       logger.warn('Backoffice bootstrap: failed to load history', { error: String(e) }, 'backoffice');
     });
 
-    const processManager = new ProcessManager(50, '/tmp/mcp-shell-outputs', fileManager);
+    const processManager = new ProcessManager(8, '/tmp/mcp-shell-outputs', fileManager);
     const terminalManager = new TerminalManager();
     processManager.setTerminalManager(terminalManager);
 
