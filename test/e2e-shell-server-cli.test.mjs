@@ -221,3 +221,64 @@ test('shell-server-cli E2E: daemon + tool + query + help', async (t) => {
   assert.match(invalidQueryResult.stderr, /system-jq/);
   assert.match(invalidQueryResult.stderr, /built-in-simple/);
 });
+
+test('shell-server-cli E2E: optional execution timeout supports omitted and null', async (t) => {
+  const socketPath = path.join(os.tmpdir(), 'mcp-shell', `e2e-concurrency-${randomUUID()}.sock`);
+
+  const daemon = spawn(
+    process.execPath,
+    [daemonPath, '--socket', socketPath, '--cwd', projectRoot, '--branch', 'main'],
+    {
+      cwd: projectRoot,
+      env: process.env,
+      stdio: 'ignore',
+    }
+  );
+
+  t.after(async () => {
+    const stopResult = runCli(['--socket', socketPath, 'stop']);
+    if (stopResult.status !== 0 && daemon.pid) {
+      try {
+        process.kill(daemon.pid, 'SIGTERM');
+      } catch {
+        // best effort only
+      }
+    }
+
+    try {
+      await rm(socketPath, { force: true });
+    } catch {
+      // best effort only
+    }
+  });
+
+  await waitForSocket(socketPath);
+
+  // Omitted execution_timeout_seconds should be accepted.
+  const omittedTimeoutResult = runCli([
+    '--socket',
+    socketPath,
+    'tool',
+    'shell-execute',
+    '--input-json',
+    '{"command":"echo timeout-omitted","foreground_wait_seconds":1}',
+    '--query',
+    '.result.stdout',
+  ]);
+  assert.equal(omittedTimeoutResult.status, 0, omittedTimeoutResult.stderr);
+  assert.match(omittedTimeoutResult.stdout, /timeout-omitted/);
+
+  // Explicit null execution_timeout_seconds should also be accepted.
+  const nullTimeoutResult = runCli([
+    '--socket',
+    socketPath,
+    'tool',
+    'shell-execute',
+    '--input-json',
+    '{"command":"echo timeout-null","foreground_wait_seconds":1,"execution_timeout_seconds":null}',
+    '--query',
+    '.result.stdout',
+  ]);
+  assert.equal(nullTimeoutResult.status, 0, nullTimeoutResult.stderr);
+  assert.match(nullTimeoutResult.stdout, /timeout-null/);
+});
